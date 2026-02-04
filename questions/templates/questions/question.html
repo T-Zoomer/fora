@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Questions</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap');
+        @keyframes pulse-recording {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        .recording-pulse {
+            animation: pulse-recording 1.5s ease-in-out infinite;
+        }
+    </style>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: { dark: '#1A1A1A' },
+                    fontFamily: { sans: ['Inter', 'system-ui', 'sans-serif'] }
+                }
+            }
+        }
+    </script>
+</head>
+<body class="bg-white min-h-screen flex items-center justify-center p-6 font-sans">
+
+<div class="w-full max-w-xl" x-data="surveyApp()" x-init="init()">
+    <!-- Loading state -->
+    <div x-show="loading" class="text-center text-gray-400">
+        Loading questions...
+    </div>
+
+    <!-- Questions -->
+    <template x-if="!loading && !done">
+        <div>
+            <div class="flex justify-between items-center mb-4">
+                <div class="text-sm text-gray-400">
+                    Question <span x-text="currentIndex + 1"></span> of <span x-text="questions.length"></span>
+                </div>
+                <button
+                    type="button"
+                    @click="toggleVoiceMode()"
+                    :class="voiceMode ? 'bg-red-500 text-white border-red-500 recording-pulse' : 'border-gray-300 text-gray-600 hover:border-teal-500 hover:text-teal-600'"
+                    class="flex items-center gap-2 px-3 py-1.5 rounded-full border text-sm transition-colors"
+                >
+                    <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+                    </svg>
+                    <span x-text="voiceMode ? 'Listening...' : 'Voice Mode'"></span>
+                </button>
+            </div>
+
+            <h1 class="text-2xl font-semibold text-dark leading-snug mb-8" x-text="questions[currentIndex]?.text"></h1>
+
+            <div>
+                <textarea
+                    x-model="answer"
+                    x-ref="textarea"
+                    class="w-full h-36 p-4 bg-gray-50 border border-gray-200 rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent text-base"
+                ></textarea>
+                <div class="mt-6 flex justify-end">
+                    <button
+                        type="button"
+                        @click="nextQuestion()"
+                        :disabled="!answer.trim() || submitting"
+                        class="bg-white text-teal-600 border-2 border-teal-600 w-12 h-12 flex items-center justify-center hover:bg-teal-600 hover:text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                        <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7" />
+                        </svg>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </template>
+
+    <!-- Done state -->
+    <template x-if="done">
+        <div>
+            <h1 class="text-2xl font-semibold text-dark mb-2">Thank you</h1>
+            <p class="text-gray-500 mb-6">Your answers have been recorded.</p>
+            <a href="/" class="text-teal-600 hover:text-teal-700 hover:underline font-medium">Start again</a>
+        </div>
+    </template>
+</div>
+
+<script>
+const CSRF_TOKEN = '{{ csrf_token }}';
+
+function surveyApp() {
+    return {
+        loading: true,
+        questions: [],
+        currentIndex: 0,
+        answer: '',
+        done: false,
+        submitting: false,
+
+        // Voice mode
+        voiceMode: false,
+        mediaStream: null,
+        audioContext: null,
+        workletNode: null,
+        websocket: null,
+        ttsAudio: null,
+        workletURL: null,
+
+        async init() {
+            const response = await fetch('/api/questions/');
+            const data = await response.json();
+            this.questions = data.questions;
+            this.loading = false;
+        },
+
+        async toggleVoiceMode() {
+            if (!this.voiceMode) {
+                await this.startVoiceMode();
+            } else {
+                this.stopVoiceMode();
+            }
+        },
+
+        async startVoiceMode() {
+            try {
+                // Get mic permission
+                this.mediaStream = await navigator.mediaDevices.getUserMedia({
+                    audio: { sampleRate: 24000, channelCount: 1, echoCancellation: true, noiseSuppression: true }
+                });
+
+                this.workletURL = this.createWorkletURL();
+                this.voiceMode = true;
+
+                // Play first question and start listening
+                await this.playCurrentQuestion();
+                await this.startListening();
+
+            } catch (error) {
+                console.error('Voice mode error:', error);
+                alert('Failed to start voice mode: ' + error.message);
+                this.stopVoiceMode();
+            }
+        },
+
+        async playCurrentQuestion() {
+            if (!this.voiceMode) return;
+
+            const questionId = this.questions[this.currentIndex].id;
+            this.ttsAudio = new Audio(`/api/tts/${questionId}/`);
+
+            await new Promise(resolve => {
+                this.ttsAudio.onended = resolve;
+                this.ttsAudio.onerror = resolve;
+                this.ttsAudio.play().catch(resolve);
+            });
+        },
+
+        async startListening() {
+            if (!this.voiceMode) return;
+
+            // Get session token
+            const tokenResponse = await fetch('/api/realtime-session/');
+            const tokenData = await tokenResponse.json();
+            if (!tokenResponse.ok) throw new Error(tokenData.error);
+
+            const ephemeralKey = tokenData.client_secret.value;
+            const self = this;
+
+            // Connect WebSocket
+            await new Promise((resolve, reject) => {
+                self.websocket = new WebSocket(
+                    'wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-12-17',
+                    ['realtime', `openai-insecure-api-key.${ephemeralKey}`, 'openai-beta.realtime-v1']
+                );
+
+                self.websocket.onopen = () => {
+                    self.websocket.send(JSON.stringify({
+                        type: 'session.update',
+                        session: {
+                            modalities: ['text', 'audio'],
+                            input_audio_transcription: { model: 'whisper-1' },
+                            turn_detection: {
+                                type: 'server_vad',
+                                threshold: 0.5,
+                                prefix_padding_ms: 300,
+                                silence_duration_ms: 500
+                            }
+                        }
+                    }));
+                    resolve();
+                };
+
+                self.websocket.onmessage = (event) => {
+                    const msg = JSON.parse(event.data);
+                    if (msg.type === 'conversation.item.input_audio_transcription.completed' && msg.transcript) {
+                        self.answer = (self.answer + ' ' + msg.transcript).trim();
+                    }
+                };
+
+                self.websocket.onerror = reject;
+            });
+
+            // Start audio capture
+            this.audioContext = new AudioContext({ sampleRate: 24000 });
+            const source = this.audioContext.createMediaStreamSource(this.mediaStream);
+
+            await this.audioContext.audioWorklet.addModule(this.workletURL);
+            this.workletNode = new AudioWorkletNode(this.audioContext, 'audio-processor');
+
+            this.workletNode.port.onmessage = (event) => {
+                if (self.websocket?.readyState === WebSocket.OPEN) {
+                    self.websocket.send(JSON.stringify({
+                        type: 'input_audio_buffer.append',
+                        audio: self.arrayBufferToBase64(event.data)
+                    }));
+                }
+            };
+
+            source.connect(this.workletNode);
+            this.workletNode.connect(this.audioContext.destination);
+        },
+
+        stopListening() {
+            if (this.workletNode) {
+                this.workletNode.disconnect();
+                this.workletNode = null;
+            }
+            if (this.audioContext) {
+                this.audioContext.close();
+                this.audioContext = null;
+            }
+            if (this.websocket) {
+                this.websocket.send(JSON.stringify({ type: 'input_audio_buffer.commit' }));
+                this.websocket.close();
+                this.websocket = null;
+            }
+        },
+
+        async nextQuestion() {
+            if (this.submitting || !this.answer.trim()) return;
+            this.submitting = true;
+
+            // Stop listening while transitioning
+            if (this.voiceMode) {
+                this.stopListening();
+            }
+
+            // Submit current answer
+            await this.submitAnswer();
+
+            // Move to next or finish
+            if (this.currentIndex < this.questions.length - 1) {
+                this.currentIndex++;
+                this.answer = '';
+
+                if (this.voiceMode) {
+                    // Play next question and resume listening
+                    await this.playCurrentQuestion();
+                    await this.startListening();
+                } else {
+                    this.$nextTick(() => this.$refs.textarea?.focus());
+                }
+            } else {
+                this.stopVoiceMode();
+                this.done = true;
+            }
+
+            this.submitting = false;
+        },
+
+        async submitAnswer() {
+            const questionId = this.questions[this.currentIndex]?.id;
+            if (!questionId || !this.answer.trim()) return;
+
+            await fetch('/api/submit-answer/', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': CSRF_TOKEN },
+                body: JSON.stringify({ question_id: questionId, answer: this.answer.trim() })
+            });
+        },
+
+        stopVoiceMode() {
+            this.voiceMode = false;
+
+            if (this.ttsAudio) {
+                this.ttsAudio.pause();
+                this.ttsAudio = null;
+            }
+
+            this.stopListening();
+
+            if (this.mediaStream) {
+                this.mediaStream.getTracks().forEach(t => t.stop());
+                this.mediaStream = null;
+            }
+        },
+
+        arrayBufferToBase64(buffer) {
+            let binary = '';
+            const bytes = new Uint8Array(buffer);
+            for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
+            return btoa(binary);
+        },
+
+        createWorkletURL() {
+            const code = `
+                class AudioProcessor extends AudioWorkletProcessor {
+                    constructor() { super(); this.buffer = new Int16Array(2400); this.idx = 0; }
+                    process(inputs) {
+                        const input = inputs[0];
+                        if (input.length > 0) {
+                            const samples = input[0];
+                            for (let i = 0; i < samples.length; i++) {
+                                const s = Math.max(-1, Math.min(1, samples[i]));
+                                this.buffer[this.idx++] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+                                if (this.idx >= 2400) { this.port.postMessage(this.buffer.buffer.slice(0)); this.idx = 0; }
+                            }
+                        }
+                        return true;
+                    }
+                }
+                registerProcessor('audio-processor', AudioProcessor);
+            `;
+            return URL.createObjectURL(new Blob([code], { type: 'application/javascript' }));
+        }
+    };
+}
+</script>
+
+</body>
+</html>
