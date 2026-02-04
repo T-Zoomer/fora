@@ -4,6 +4,7 @@ from django.db import models
 class Question(models.Model):
     text = models.TextField()
     order = models.PositiveIntegerField(default=0)
+    analyze_sentiment = models.BooleanField(default=True)
 
     class Meta:
         ordering = ['order']
