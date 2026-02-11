@@ -1,10 +1,10 @@
 from django.db import models
 
-from questions.models import Question
+from questions.models import Interview
 
 
 class Result(models.Model):
-    question = models.OneToOneField(Question, on_delete=models.CASCADE)
+    interview = models.OneToOneField(Interview, on_delete=models.CASCADE)
 
     # AI summary
     summary = models.TextField(blank=True, default='')
@@ -24,4 +24,4 @@ class Result(models.Model):
         db_table = 'analysis_analysisresult'
 
     def __str__(self):
-        return f"Result for: {self.question}"
+        return f"Result for: {self.interview}"

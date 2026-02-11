@@ -11,7 +11,7 @@ class Respondent(models.Model):
         return str(self.uuid)[:8]
 
 
-class Question(models.Model):
+class Interview(models.Model):
     text = models.TextField()
     order = models.PositiveIntegerField(default=0)
     analyze_sentiment = models.BooleanField(default=True)
@@ -24,10 +24,10 @@ class Question(models.Model):
 
 
 class Answer(models.Model):
-    question = models.ForeignKey(Question, on_delete=models.CASCADE)
+    interview = models.ForeignKey(Interview, on_delete=models.CASCADE)
     respondent = models.ForeignKey(Respondent, on_delete=models.CASCADE, null=True)
     text = models.TextField()
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
-        return f"Answer to: {self.question}"
+        return f"Answer to: {self.interview}"

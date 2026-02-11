@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Question</title>
+    <title>Interview</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
     <style>
@@ -36,18 +36,18 @@
 
     <div class="flex items-center justify-center p-6" style="min-height: calc(100vh - 65px);">
 
-<div class="w-full max-w-xl" x-data="surveyApp()" x-init="init()">
+<div class="w-full max-w-xl" x-data="interviewApp()" x-init="init()">
     <!-- Loading state -->
     <div x-show="loading" class="text-center text-gray-400">
-        Loading questions...
+        Loading interviews...
     </div>
 
-    <!-- Questions (Standard Mode) -->
+    <!-- Interviews (Standard Mode) -->
     <template x-if="!loading && !done && !chatMode">
         <div>
             <div class="flex justify-between items-center mb-4">
                 <div class="text-sm text-gray-400">
-                    Question <span x-text="currentIndex + 1"></span> of <span x-text="questions.length"></span>
+                    Interview <span x-text="currentIndex + 1"></span> of <span x-text="interviews.length"></span>
                 </div>
                 <div class="flex gap-2">
                     <button
@@ -74,7 +74,7 @@
                 </div>
             </div>
 
-            <h1 class="text-2xl font-semibold text-dark leading-snug mb-8" x-text="questions[currentIndex]?.text"></h1>
+            <h1 class="text-2xl font-semibold text-dark leading-snug mb-8" x-text="interviews[currentIndex]?.text"></h1>
 
             <div>
                 <textarea
@@ -179,10 +179,10 @@
 <script>
 const CSRF_TOKEN = '{{ csrf_token }}';
 
-function surveyApp() {
+function interviewApp() {
     return {
         loading: true,
-        questions: [],
+        interviews: [],
         currentIndex: 0,
         answer: '',
         done: false,
@@ -205,9 +205,9 @@ function surveyApp() {
         workletURL: null,
 
         async init() {
-            const response = await fetch('/api/questions/');
+            const response = await fetch('/api/interviews/');
             const data = await response.json();
-            this.questions = data.questions;
+            this.interviews = data.interviews;
             this.loading = false;
         },
 
@@ -229,8 +229,8 @@ function surveyApp() {
                 this.workletURL = this.createWorkletURL();
                 this.voiceMode = true;
 
-                // Play first question and start listening
-                await this.playCurrentQuestion();
+                // Play first interview and start listening
+                await this.playCurrentInterview();
                 await this.startListening();
 
             } catch (error) {
@@ -240,11 +240,11 @@ function surveyApp() {
             }
         },
 
-        async playCurrentQuestion() {
+        async playCurrentInterview() {
             if (!this.voiceMode) return;
 
-            const questionId = this.questions[this.currentIndex].id;
-            this.ttsAudio = new Audio(`/api/tts/${questionId}/`);
+            const interviewId = this.interviews[this.currentIndex].id;
+            this.ttsAudio = new Audio(`/api/tts/${interviewId}/`);
 
             await new Promise(resolve => {
                 this.ttsAudio.onended = resolve;
@@ -347,13 +347,13 @@ function surveyApp() {
             await this.submitAnswer();
 
             // Move to next or finish
-            if (this.currentIndex < this.questions.length - 1) {
+            if (this.currentIndex < this.interviews.length - 1) {
                 this.currentIndex++;
                 this.answer = '';
 
                 if (this.voiceMode) {
-                    // Play next question and resume listening
-                    await this.playCurrentQuestion();
+                    // Play next interview and resume listening
+                    await this.playCurrentInterview();
                     await this.startListening();
                 } else {
                     this.$nextTick(() => this.$refs.textarea?.focus());
@@ -367,13 +367,13 @@ function surveyApp() {
         },
 
         async submitAnswer() {
-            const questionId = this.questions[this.currentIndex]?.id;
-            if (!questionId || !this.answer.trim()) return;
+            const interviewId = this.interviews[this.currentIndex]?.id;
+            if (!interviewId || !this.answer.trim()) return;
 
             await fetch('/api/submit-answer/', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'X-CSRFToken': CSRF_TOKEN },
-                body: JSON.stringify({ question_id: questionId, answer: this.answer.trim() })
+                body: JSON.stringify({ interview_id: interviewId, answer: this.answer.trim() })
             });
         },
 
@@ -385,7 +385,7 @@ function surveyApp() {
             this.answer = '';
             this.chatMessages = [
                 { role: 'assistant', content: "Hi! I'd like to ask you a few questions." },
-                { role: 'assistant', content: this.questions[0]?.text }
+                { role: 'assistant', content: this.interviews[0]?.text }
             ];
             this.$nextTick(() => {
                 this.$refs.chatInput?.focus();
@@ -425,13 +425,13 @@ function surveyApp() {
 
             this.chatTyping = false;
 
-            // Move to next question or finish
-            if (this.currentIndex < this.questions.length - 1) {
+            // Move to next interview or finish
+            if (this.currentIndex < this.interviews.length - 1) {
                 this.currentIndex++;
                 this.answer = '';
                 this.chatMessages.push({
                     role: 'assistant',
-                    content: this.questions[this.currentIndex].text
+                    content: this.interviews[this.currentIndex].text
                 });
                 this.scrollChatToBottom();
                 this.$nextTick(() => this.$refs.chatInput?.focus());

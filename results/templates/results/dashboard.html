@@ -28,10 +28,10 @@
     {% include "includes/header.html" %}
 
     <div x-data="resultsApp()" x-init="loadResults()" class="h-[calc(100vh-65px)] flex">
-        <!-- Left Panel: Questions List -->
+        <!-- Left Panel -->
         <div class="w-80 border-r border-gray-200 flex flex-col">
-            <!-- Run Button -->
-            <div class="p-4 border-b border-gray-100">
+            <!-- Header Actions -->
+            <div class="p-4 border-b border-gray-100 space-y-2">
                 <button
                     @click="runAll()"
                     :disabled="isRunning"
@@ -41,31 +41,28 @@
                     <span x-show="!isRunning">Generate Results</span>
                     <span x-show="isRunning">Processing...</span>
                 </button>
-                <p class="text-xs text-gray-400 mt-2 text-center">
-                    {{ questions_count }} questions · {{ total_answers }} answers
-                </p>
             </div>
 
-            <!-- Questions List -->
+            <!-- Interviews List -->
             <div class="flex-1 overflow-y-auto scrollbar-thin">
                 <div x-show="loading" class="p-4 text-center text-gray-400 text-sm">
                     Loading...
                 </div>
 
-                <template x-for="(result, index) in results" :key="result.question_id">
+                <template x-for="(result, index) in results" :key="result.interview_id">
                     <div
-                        @click="selectQuestion(index)"
+                        @click="selectInterview(index)"
                         :class="selectedIndex === index ? 'bg-gray-50 border-l-2 border-gray-900' : 'border-l-2 border-transparent hover:bg-gray-50'"
                         class="p-4 cursor-pointer transition-colors"
                     >
-                        <p class="text-xs text-gray-400 mb-1" x-text="'Q' + (index + 1)"></p>
-                        <p class="text-sm text-gray-900 line-clamp-2" x-text="result.question_text"></p>
+                        <p class="text-xs text-gray-400 mb-1" x-text="'Topic ' + (index + 1)"></p>
+                        <p class="text-sm text-gray-900 line-clamp-2" x-text="result.interview_text"></p>
 
                         <p class="text-xs text-gray-400 mt-2" x-show="result.status === 'completed'">
                             <span x-text="result.themes.length + ' themes · ' + result.answer_count + ' answers'"></span>
                             <span x-show="result.sentiment?.average != null" class="ml-1">
                                 · <span x-text="getSentimentEmoji(result.sentiment?.average)"></span>
-                                <span x-text="result.sentiment?.average?.toFixed(2)"></span>
+                                <span x-text="result.sentiment?.average?.toFixed(1)"></span>
                             </span>
                         </p>
                         <p x-show="result.status !== 'completed'" class="text-xs text-gray-400 mt-2" x-text="result.status === 'running' ? 'Processing...' : 'Not processed'"></p>
@@ -74,240 +71,215 @@
             </div>
         </div>
 
-        <!-- Right Panel: Selected Question Details -->
-        <div class="flex-1 overflow-y-auto scrollbar-thin">
-            <!-- No Selection State -->
-            <div x-show="selectedIndex === null" class="h-full flex items-center justify-center">
-                <p class="text-gray-400">Select a question to view details</p>
-            </div>
+        <!-- Right Panel -->
+        <div class="flex-1 flex flex-col">
+            <!-- Interview Details View -->
+            <div x-show="!chatOpen" class="flex-1 overflow-y-auto scrollbar-thin">
+                <!-- No Selection State -->
+                <div x-show="selectedIndex === null" class="h-full flex items-center justify-center">
+                    <p class="text-gray-400">Select a topic to view details</p>
+                </div>
 
-            <!-- Selected Question Details -->
-            <div x-show="selectedIndex !== null && results[selectedIndex]" class="p-8" :class="chatMode ? 'flex flex-col h-full' : ''">
-                    <!-- Question Header -->
-                    <div class="mb-8 flex-shrink-0">
-                        <div class="flex items-start justify-between">
-                            <div>
-                                <p class="text-xs text-gray-400 mb-2" x-text="'Question ' + (selectedIndex + 1)"></p>
-                                <h2 class="text-xl font-medium text-gray-900" x-text="results[selectedIndex]?.question_text"></h2>
-                                <p class="text-sm text-gray-500 mt-2" x-text="(results[selectedIndex]?.answer_count || 0) + ' answers'"></p>
-                            </div>
-                            <!-- Chat Toggle -->
-                            <button
-                                @click="toggleChatMode()"
-                                :class="chatMode ? 'bg-gray-900 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'"
-                                class="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors"
-                            >
-                                <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                                    <path stroke-linecap="round" stroke-linejoin="round" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-                                </svg>
-                                <span x-text="chatMode ? 'Exit Chat Mode' : 'Chat Mode'"></span>
-                            </button>
-                        </div>
+                <!-- Selected Topic Details -->
+                <div x-show="selectedIndex !== null && results[selectedIndex]" class="p-8">
+                    <!-- Topic Header -->
+                    <div class="mb-8">
+                        <p class="text-xs text-gray-400 mb-2" x-text="'Topic ' + (selectedIndex + 1)"></p>
+                        <h2 class="text-xl font-medium text-gray-900" x-text="results[selectedIndex]?.interview_text"></h2>
                     </div>
 
-                    <!-- Chat Mode -->
-                    <div x-show="chatMode" class="flex-1 flex flex-col min-h-0">
-                        <!-- Chat Messages -->
-                        <div class="flex-1 overflow-y-auto space-y-4 mb-4 scrollbar-thin" x-ref="chatMessages">
-                            <template x-if="chatMessages.length === 0">
-                                <div class="text-center py-12">
-                                    <p class="text-gray-400 mb-2">Ask questions about the responses</p>
-                                    <p class="text-sm text-gray-300">e.g., "What are the main concerns?" or "Summarize the positive feedback"</p>
-                                </div>
-                            </template>
-                            <template x-for="(msg, idx) in chatMessages" :key="idx">
-                                <div :class="msg.role === 'user' ? 'flex justify-end' : 'flex justify-start'">
-                                    <div
-                                        :class="msg.role === 'user' ? 'bg-gray-900 text-white' : 'bg-gray-100 text-gray-900'"
-                                        class="max-w-[80%] px-4 py-3 rounded-lg text-sm whitespace-pre-wrap"
-                                        x-text="msg.content"
-                                    ></div>
-                                </div>
-                            </template>
-                            <div x-show="chatLoading" class="flex justify-start">
-                                <div class="bg-gray-100 px-4 py-3 rounded-lg text-sm text-gray-500">
-                                    Thinking...
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- Chat Input -->
-                        <div class="flex-shrink-0 pt-4">
-                            <form @submit.prevent="sendChatMessage()" class="relative">
-                                <input
-                                    type="text"
-                                    x-model="chatInput"
-                                    :disabled="chatLoading"
-                                    placeholder="Ask about the responses..."
-                                    class="w-full px-4 py-3 pr-12 bg-gray-100 rounded-full text-sm focus:outline-none focus:ring-2 focus:ring-gray-300 focus:bg-white transition-colors"
-                                >
-                                <button
-                                    type="submit"
-                                    :disabled="!chatInput.trim() || chatLoading"
-                                    class="absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 flex items-center justify-center bg-gray-900 text-white rounded-full hover:bg-gray-800 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-                                >
-                                    <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                                        <path stroke-linecap="round" stroke-linejoin="round" d="M5 12h14M12 5l7 7-7 7" />
-                                    </svg>
-                                </button>
-                            </form>
-                        </div>
+                    <!-- Not Processed State -->
+                    <div x-show="results[selectedIndex]?.status !== 'completed'" class="py-12 text-center">
+                        <p class="text-gray-400" x-text="results[selectedIndex]?.status === 'running' ? 'Processing...' : 'Generate results to see themes'"></p>
                     </div>
 
-                    <!-- Results Mode (existing content) -->
-                    <div x-show="!chatMode">
-                        <!-- Not Processed State -->
-                        <div x-show="results[selectedIndex]?.status !== 'completed'" class="py-12 text-center">
-                            <p class="text-gray-400" x-text="results[selectedIndex]?.status === 'running' ? 'Processing...' : 'Generate results to see themes'"></p>
+                    <!-- Results -->
+                    <div x-show="results[selectedIndex]?.status === 'completed'">
+                        <!-- AI Summary -->
+                        <div x-show="results[selectedIndex]?.summary" class="mb-8 p-4 bg-gray-50 rounded-lg">
+                            <h3 class="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">AI Summary</h3>
+                            <p class="text-sm text-gray-700 leading-relaxed" x-text="results[selectedIndex]?.summary"></p>
                         </div>
 
-                        <!-- Results -->
-                        <div x-show="results[selectedIndex]?.status === 'completed'">
-                            <!-- AI Summary -->
-                            <div x-show="results[selectedIndex]?.summary" class="mb-8 p-4 bg-gray-50 rounded-lg">
-                                <h3 class="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">AI Summary</h3>
-                                <p class="text-sm text-gray-700 leading-relaxed" x-text="results[selectedIndex]?.summary"></p>
+                        <!-- Sentiment Distribution -->
+                        <div x-show="results[selectedIndex]?.sentiment?.answers?.length > 0" class="mb-8 p-4 border border-gray-200 rounded-lg">
+                            <div class="flex justify-between items-center mb-4">
+                                <h3 class="text-xs font-medium text-gray-500 uppercase tracking-wide">Sentiment Distribution</h3>
+                                <div class="flex items-center gap-2">
+                                    <span class="text-lg" x-text="getSentimentEmoji(results[selectedIndex]?.sentiment?.average)"></span>
+                                    <span class="text-sm text-gray-600">avg: <span class="font-medium" x-text="results[selectedIndex]?.sentiment?.average?.toFixed(1)"></span></span>
+                                </div>
                             </div>
-
-                            <!-- Sentiment Score -->
-                            <div x-show="results[selectedIndex]?.sentiment?.average != null" class="mb-8 p-4 border border-gray-200 rounded-lg">
-                                <h3 class="text-xs font-medium text-gray-500 uppercase tracking-wide mb-3">Average Sentiment Score</h3>
-                                <div class="flex items-center gap-4">
+                            <div class="flex items-end gap-1" style="height: 80px;">
+                                <template x-for="score in [1,2,3,4,5,6,7,8,9,10]" :key="score">
                                     <div class="flex-1">
-                                        <div class="h-3 bg-gray-100 rounded-full overflow-hidden">
-                                            <div
-                                                class="h-full rounded-full transition-all duration-300"
-                                                :style="'width: ' + (results[selectedIndex]?.sentiment?.average * 100) + '%; background: ' + getSentimentColor(results[selectedIndex]?.sentiment?.average)"
-                                            ></div>
-                                        </div>
-                                        <div class="flex justify-between mt-1 text-xs text-gray-400">
-                                            <span>Negative</span>
-                                            <span>Neutral</span>
-                                            <span>Positive</span>
-                                        </div>
-                                    </div>
-                                    <div class="text-right">
-                                        <span class="text-xl" x-text="getSentimentEmoji(results[selectedIndex]?.sentiment?.average)"></span>
-                                        <p class="text-base font-medium text-gray-900" x-text="results[selectedIndex]?.sentiment?.average?.toFixed(2)"></p>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <!-- Donut Chart Overview -->
-                            <div x-show="results[selectedIndex]?.themes?.length > 0" class="mb-8" x-data="{ hoveredTheme: null }">
-                                <h3 class="text-xs font-medium text-gray-500 uppercase tracking-wide mb-3">Theme Distribution</h3>
-                                <div class="flex items-center gap-6">
-                                    <!-- Donut -->
-                                    <div class="relative w-40 h-40 flex-shrink-0">
                                         <div
-                                            class="w-full h-full rounded-full"
-                                            :style="'background: ' + getDonutGradient()"
+                                            class="w-full rounded-t transition-all duration-300"
+                                            :style="'height: ' + getScoreBarHeight(score) + 'px; background-color: ' + getSentimentColor(score)"
                                         ></div>
-                                        <!-- Center hole -->
-                                        <div class="absolute inset-4 bg-white rounded-full flex items-center justify-center">
-                                            <div class="text-center" x-show="hoveredTheme">
-                                                <p class="text-lg font-semibold text-gray-900" x-text="hoveredTheme?.count"></p>
-                                                <p class="text-xs text-gray-500">answers</p>
-                                            </div>
-                                            <div class="text-center" x-show="!hoveredTheme">
-                                                <p class="text-lg font-semibold text-gray-900" x-text="results[selectedIndex]?.answer_count"></p>
-                                                <p class="text-xs text-gray-500">total</p>
-                                            </div>
+                                    </div>
+                                </template>
+                            </div>
+                            <div class="flex gap-1 mt-1">
+                                <template x-for="score in [1,2,3,4,5,6,7,8,9,10]" :key="score">
+                                    <div class="flex-1 text-center text-xs text-gray-400" x-text="score"></div>
+                                </template>
+                            </div>
+                        </div>
+
+                        <!-- Donut Chart -->
+                        <div x-show="results[selectedIndex]?.themes?.length > 0" class="mb-8" x-data="{ hoveredTheme: null }">
+                            <h3 class="text-xs font-medium text-gray-500 uppercase tracking-wide mb-3">Theme Distribution</h3>
+                            <div class="flex items-center gap-6">
+                                <div class="relative w-40 h-40 flex-shrink-0">
+                                    <div class="w-full h-full rounded-full" :style="'background: ' + getDonutGradient()"></div>
+                                    <div class="absolute inset-4 bg-white rounded-full flex items-center justify-center">
+                                        <div class="text-center" x-show="hoveredTheme">
+                                            <p class="text-lg font-semibold text-gray-900" x-text="hoveredTheme?.count"></p>
+                                            <p class="text-xs text-gray-500">answers</p>
+                                        </div>
+                                        <div class="text-center" x-show="!hoveredTheme">
+                                            <p class="text-lg font-semibold text-gray-900" x-text="results[selectedIndex]?.answer_count"></p>
+                                            <p class="text-xs text-gray-500">answers</p>
                                         </div>
                                     </div>
-                                    <!-- Legend -->
-                                    <div class="flex-1 space-y-1">
-                                        <template x-for="(theme, idx) in getSortedThemes()" :key="theme.name">
-                                            <div
-                                                class="flex items-center gap-2 px-2 py-1 rounded cursor-pointer transition-colors"
-                                                :class="hoveredTheme?.name === theme.name ? 'bg-gray-100' : 'hover:bg-gray-50'"
-                                                @mouseenter="hoveredTheme = theme"
-                                                @mouseleave="hoveredTheme = null"
-                                            >
-                                                <div
-                                                    class="w-3 h-3 rounded-sm flex-shrink-0"
-                                                    :style="'background-color: ' + getThemeBarColor(theme)"
-                                                ></div>
-                                                <span class="text-sm text-gray-700 truncate" x-text="theme.name"></span>
-                                                <span class="text-xs text-gray-400 ml-auto flex-shrink-0" x-text="theme.count"></span>
-                                            </div>
-                                        </template>
-                                    </div>
+                                </div>
+                                <div class="flex-1 space-y-1">
+                                    <template x-for="(theme, idx) in getSortedThemes()" :key="theme.name">
+                                        <div
+                                            class="flex items-center gap-2 px-2 py-1 rounded cursor-pointer transition-colors"
+                                            :class="hoveredTheme?.name === theme.name ? 'bg-gray-100' : 'hover:bg-gray-50'"
+                                            @mouseenter="hoveredTheme = theme"
+                                            @mouseleave="hoveredTheme = null"
+                                        >
+                                            <div class="w-3 h-3 rounded-sm flex-shrink-0" :style="'background-color: ' + getThemeBarColor(theme)"></div>
+                                            <span class="text-sm text-gray-700 truncate" x-text="theme.name"></span>
+                                            <span class="text-xs text-gray-400 ml-auto flex-shrink-0" x-text="theme.count"></span>
+                                        </div>
+                                    </template>
                                 </div>
                             </div>
+                        </div>
 
-                            <!-- Interactive Bar Chart -->
-                            <div class="mb-8">
-                                <h3 class="text-xs font-medium text-gray-500 uppercase tracking-wide mb-3">Explore Themes</h3>
-                                <div class="space-y-1">
+                        <!-- Explore Themes -->
+                        <div class="mb-8">
+                            <h3 class="text-xs font-medium text-gray-500 uppercase tracking-wide mb-3">Explore Themes</h3>
+                            <div class="space-y-1">
                                 <template x-for="(theme, themeIndex) in getSortedThemes()" :key="theme.name">
                                     <div x-data="{ expanded: false }" class="group">
-                                        <!-- Bar (clickable, with title inside) -->
-                                        <button
-                                            @click="expanded = !expanded"
-                                            class="w-full text-left cursor-pointer"
-                                        >
+                                        <button @click="expanded = !expanded" class="w-full text-left cursor-pointer">
                                             <div class="h-9 bg-gray-100 rounded overflow-hidden relative transition-all duration-200 group-hover:shadow-md group-hover:ring-2 group-hover:ring-gray-300">
-                                                <!-- Colored bar -->
-                                                <div
-                                                    class="h-full rounded transition-all duration-300"
-                                                    :style="'width: ' + getBarWidth(theme.count) + '%; background-color: ' + getExploreBarColor(theme)"
-                                                ></div>
-                                                <!-- Label overlay -->
+                                                <div class="h-full rounded transition-all duration-300" :style="'width: ' + getBarWidth(theme.count) + '%; background-color: ' + getExploreBarColor(theme)"></div>
                                                 <div class="absolute inset-0 flex items-center justify-between px-3">
                                                     <span class="text-sm font-medium text-gray-900 truncate" x-text="theme.name"></span>
                                                     <div class="flex items-center gap-2 flex-shrink-0 ml-2">
                                                         <span class="text-xs text-gray-500" x-text="theme.count"></span>
-                                                        <svg
-                                                            class="w-4 h-4 text-gray-400 transition-transform duration-200 group-hover:text-gray-600"
-                                                            :class="expanded ? 'rotate-180' : ''"
-                                                            fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"
-                                                        >
+                                                        <svg class="w-4 h-4 text-gray-400 transition-transform duration-200" :class="expanded ? 'rotate-180' : ''" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                                                             <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" />
                                                         </svg>
                                                     </div>
                                                 </div>
                                             </div>
                                         </button>
-
-                                        <!-- Expanded Content -->
                                         <div x-show="expanded" x-collapse>
                                             <div class="mt-2 mb-3 ml-5 pl-4 border-l-2 border-gray-200">
                                                 <p class="text-sm text-gray-500 mb-3" x-text="theme.description"></p>
-
-                                                <!-- Answers -->
+                                                <div x-show="getThemeSentiment(theme) !== null" class="flex items-center gap-2 mb-3 text-sm text-gray-600">
+                                                    <span>Average sentiment:</span>
+                                                    <span x-text="getSentimentEmoji(getThemeSentiment(theme))"></span>
+                                                    <span x-text="getThemeSentiment(theme)?.toFixed(1)"></span>
+                                                </div>
                                                 <div class="space-y-2">
                                                     <template x-for="(answer, answerIndex) in theme.answers" :key="answer.id">
-                                                        <div
-                                                            class="text-sm text-gray-600 p-3 rounded-lg border-l-2 bg-gray-50"
-                                                            :style="'border-color: ' + getAnswerSentimentBorder(answer.id)"
-                                                            x-text="answer.text"
-                                                        ></div>
+                                                        <div class="text-sm text-gray-600 p-3 rounded-lg border-l-2 bg-gray-50" :style="'border-color: ' + getAnswerSentimentBorder(answer.id)" x-text="answer.text"></div>
                                                     </template>
                                                 </div>
                                             </div>
                                         </div>
                                     </div>
                                 </template>
-                                </div>
-
-                                <!-- X-Axis -->
-                                <div class="mt-2 pt-2 border-t border-gray-200">
-                                    <div class="flex justify-between text-xs text-gray-400">
-                                        <span>0</span>
-                                        <span x-text="Math.ceil(getMaxThemeCount() / 2)"></span>
-                                        <span x-text="getMaxThemeCount()"></span>
-                                    </div>
-                                    <p class="text-xs text-gray-400 text-center mt-1">Number of answers</p>
-                                </div>
                             </div>
-
-                            <p x-show="results[selectedIndex]?.themes?.length === 0" class="text-gray-400 py-12 text-center">No themes identified for this question.</p>
+                            <div class="mt-2 pt-2 border-t border-gray-200">
+                                <div class="flex justify-between text-xs text-gray-400">
+                                    <span>0</span>
+                                    <span x-text="Math.ceil(getMaxThemeCount() / 2)"></span>
+                                    <span x-text="getMaxThemeCount()"></span>
+                                </div>
+                                <p class="text-xs text-gray-400 text-center mt-1">Number of answers</p>
+                            </div>
                         </div>
+
+                        <p x-show="results[selectedIndex]?.themes?.length === 0" class="text-gray-400 py-12 text-center">No themes identified.</p>
                     </div>
                 </div>
             </div>
+
+            <!-- Chat View -->
+            <div x-show="chatOpen" class="flex-1 flex flex-col p-6">
+                <div class="mb-4 flex items-center justify-between">
+                    <h2 class="text-xl font-medium text-gray-900">Chat with respondents</h2>
+                    <button
+                        @click="chatOpen = false"
+                        class="px-3 py-1.5 text-sm text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded transition-colors"
+                    >
+                        Exit chat
+                    </button>
+                </div>
+
+                <!-- Chat Messages -->
+                <div class="flex-1 overflow-y-auto space-y-3 mb-4 scrollbar-thin" x-ref="chatMessages">
+                    <template x-if="chatMessages.length === 0">
+                        <div class="text-center py-12">
+                            <p class="text-gray-400 mb-2">Ask questions about your interview data</p>
+                            <p class="text-sm text-gray-300">e.g., "What are the top productivity blockers?" or "What boosts mood?"</p>
+                        </div>
+                    </template>
+                    <template x-for="(msg, idx) in chatMessages" :key="idx">
+                        <div :class="msg.role === 'user' ? 'flex justify-end' : 'flex justify-start'">
+                            <div
+                                :class="msg.role === 'user' ? 'bg-gray-900 text-white' : 'bg-gray-100 text-gray-900'"
+                                class="max-w-[80%] px-4 py-3 rounded-lg text-sm whitespace-pre-wrap"
+                                x-text="msg.content"
+                            ></div>
+                        </div>
+                    </template>
+                    <div x-show="chatLoading" class="flex justify-start">
+                        <div class="bg-gray-100 px-4 py-3 rounded-lg text-sm text-gray-500">Thinking...</div>
+                    </div>
+                </div>
+
+                <!-- Chat Input -->
+                <form @submit.prevent="sendChatMessage()" class="relative">
+                    <input
+                        type="text"
+                        x-model="chatInput"
+                        :disabled="chatLoading"
+                        placeholder="Ask a question..."
+                        class="w-full px-4 py-3 pr-12 bg-gray-100 rounded-full text-sm focus:outline-none focus:ring-2 focus:ring-gray-300 focus:bg-white transition-colors"
+                    >
+                    <button
+                        type="submit"
+                        :disabled="!chatInput.trim() || chatLoading"
+                        class="absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 flex items-center justify-center bg-gray-900 text-white rounded-full hover:bg-gray-800 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                    >
+                        <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M5 12h14M12 5l7 7-7 7" />
+                        </svg>
+                    </button>
+                </form>
+            </div>
         </div>
+
+        <!-- Floating Chat Button -->
+        <button
+            @click="chatOpen = true"
+            x-show="!chatOpen"
+            class="fixed bottom-6 right-6 w-14 h-14 rounded-full shadow-lg flex items-center justify-center text-white bg-gray-900 hover:bg-gray-800 transition-all duration-200 hover:scale-105 z-50"
+        >
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+            </svg>
+        </button>
     </div>
 
     <script>
@@ -317,9 +289,9 @@
                 loading: true,
                 isRunning: {{ is_running|yesno:"true,false" }},
                 selectedIndex: null,
+                chatOpen: false,
 
-                // Chat mode
-                chatMode: false,
+                // Chat
                 chatMessages: [],
                 chatInput: '',
                 chatLoading: false,
@@ -330,13 +302,10 @@
                         const response = await fetch('/results/api/results/');
                         const data = await response.json();
                         this.results = data.results || [];
-
-                        // Auto-select first question with results
                         if (this.results.length > 0) {
                             const firstCompleted = this.results.findIndex(r => r.status === 'completed');
                             this.selectedIndex = firstCompleted >= 0 ? firstCompleted : 0;
                         }
-
                     } catch (error) {
                         console.error('Failed to load results:', error);
                     } finally {
@@ -344,19 +313,9 @@
                     }
                 },
 
-                selectQuestion(index) {
+                selectInterview(index) {
                     this.selectedIndex = index;
-                    this.chatMode = false;
-                    this.chatMessages = [];
-                    this.chatInput = '';
-                },
-
-                toggleChatMode() {
-                    this.chatMode = !this.chatMode;
-                    if (this.chatMode) {
-                        this.chatMessages = [];
-                        this.chatInput = '';
-                    }
+                    this.chatOpen = false;
                 },
 
                 async sendChatMessage() {
@@ -367,16 +326,12 @@
                     this.chatMessages.push({ role: 'user', content: userMessage });
                     this.chatLoading = true;
 
-                    // Scroll to bottom
                     this.$nextTick(() => {
                         const container = this.$refs.chatMessages;
                         if (container) container.scrollTop = container.scrollHeight;
                     });
 
                     try {
-                        const questionId = this.results[this.selectedIndex]?.question_id;
-                        const history = this.chatMessages.slice(0, -1);
-
                         const response = await fetch('/results/api/chat/', {
                             method: 'POST',
                             headers: {
@@ -384,14 +339,12 @@
                                 'X-CSRFToken': this.getCsrfToken()
                             },
                             body: JSON.stringify({
-                                question_id: questionId,
                                 message: userMessage,
-                                history: history
+                                history: this.chatMessages.slice(0, -1)
                             })
                         });
 
                         const data = await response.json();
-
                         if (data.success) {
                             this.chatMessages.push({ role: 'assistant', content: data.response });
                         } else {
@@ -417,20 +370,15 @@
                 getDonutGradient() {
                     const sorted = this.getSortedThemes();
                     if (sorted.length === 0) return '#e5e7eb';
-
                     const total = sorted.reduce((sum, t) => sum + t.count, 0);
                     if (total === 0) return '#e5e7eb';
-
                     let currentAngle = 0;
                     const segments = [];
-
                     sorted.forEach(theme => {
                         const angle = (theme.count / total) * 360;
-                        const color = this.getThemeBarColor(theme);
-                        segments.push(`${color} ${currentAngle}deg ${currentAngle + angle}deg`);
+                        segments.push(`${this.getThemeBarColor(theme)} ${currentAngle}deg ${currentAngle + angle}deg`);
                         currentAngle += angle;
                     });
-
                     return `conic-gradient(${segments.join(', ')})`;
                 },
 
@@ -441,7 +389,6 @@
                 },
 
                 getBarWidth(count) {
-                    if (this.selectedIndex === null) return 0;
                     const themes = this.results[this.selectedIndex]?.themes || [];
                     const maxCount = Math.max(...themes.map(t => t.count), 1);
                     return (count / maxCount) * 100;
@@ -449,129 +396,87 @@
 
                 getThemeBarColor(theme) {
                     const sentiment = this.getThemeSentiment(theme);
-                    if (sentiment !== null) {
-                        return this.getSentimentColor(sentiment);
-                    }
-                    // Use varied colors when no sentiment
+                    if (sentiment !== null) return this.getSentimentColor(sentiment);
                     const idx = this.getSortedThemes().findIndex(t => t.name === theme.name);
                     return this.getThemeColor(idx);
                 },
 
                 getExploreBarColor(theme) {
-                    // Only show sentiment colors if sentiment data exists
                     const result = this.results[this.selectedIndex];
                     if (result?.sentiment?.answers?.length > 0) {
                         const sentiment = this.getThemeSentiment(theme);
-                        if (sentiment !== null) {
-                            return this.getSentimentColor(sentiment);
-                        }
+                        if (sentiment !== null) return this.getSentimentColor(sentiment);
                     }
-                    // Neutral gray when no sentiment
                     return '#e5e7eb';
                 },
 
                 getThemeColor(index) {
-                    const colors = [
-                        '#c7d2fe', // indigo-200
-                        '#a5b4fc', // indigo-300
-                        '#bfdbfe', // blue-200
-                        '#93c5fd', // blue-300
-                        '#c4b5fd', // violet-300
-                        '#d8b4fe', // purple-300
-                        '#a5f3fc', // cyan-200
-                        '#99f6e4', // teal-200
-                        '#bbf7d0', // green-200
-                        '#fde68a', // amber-200
-                        '#fed7aa', // orange-200
-                        '#fecaca', // red-200
-                    ];
+                    const colors = ['#c7d2fe', '#a5b4fc', '#bfdbfe', '#93c5fd', '#c4b5fd', '#d8b4fe', '#a5f3fc', '#99f6e4', '#bbf7d0', '#fde68a', '#fed7aa', '#fecaca'];
                     return colors[index % colors.length];
                 },
 
                 getSentimentEmoji(score) {
                     if (score == null) return '';
-                    if (score >= 0.7) return '😊';
-                    if (score >= 0.4) return '😐';
+                    if (score >= 7) return '😊';
+                    if (score >= 4) return '😐';
                     return '😟';
                 },
 
                 getSentimentColor(score) {
                     if (score == null) return '#d1d5db';
-                    // Lighter pastel colors for readability with dark text
-                    // Interpolate from light red (0) through light yellow (0.5) to light green (1)
-                    if (score <= 0.5) {
-                        // Light red to light yellow
-                        const r = 254;
-                        const g = Math.round(202 + (score * 2) * (240 - 202));
-                        const b = Math.round(202 + (score * 2) * (180 - 202));
+                    // Normalize score from 1-10 to 0-1 for color calculation
+                    const normalized = (score - 1) / 9;
+                    if (normalized <= 0.5) {
+                        const r = 254, g = Math.round(202 + (normalized * 2) * 38), b = Math.round(202 - (normalized * 2) * 22);
                         return `rgb(${r}, ${g}, ${b})`;
                     } else {
-                        // Light yellow to light green
-                        const t = (score - 0.5) * 2;
-                        const r = Math.round(254 - t * (254 - 187));
-                        const g = Math.round(240 + t * (247 - 240));
-                        const b = Math.round(180 + t * (208 - 180));
-                        return `rgb(${r}, ${g}, ${b})`;
+                        const t = (normalized - 0.5) * 2;
+                        return `rgb(${Math.round(254 - t * 67)}, ${Math.round(240 + t * 7)}, ${Math.round(180 + t * 28)})`;
                     }
                 },
 
-                getAnswerSentiment(answerId) {
-                    if (this.selectedIndex === null) return null;
-                    const result = this.results[this.selectedIndex];
-                    if (!result?.sentiment?.answers) return null;
-                    const answer = result.sentiment.answers.find(a => a.id === answerId);
-                    return answer?.score ?? null;
+                getScoreBarHeight(score) {
+                    if (this.selectedIndex === null) return 0;
+                    const answers = this.results[this.selectedIndex]?.sentiment?.answers || [];
+                    const count = answers.filter(a => Math.round(a.score) === score).length;
+                    if (count === 0) return 0;
+                    const maxCount = Math.max(...[1,2,3,4,5,6,7,8,9,10].map(s =>
+                        answers.filter(a => Math.round(a.score) === s).length
+                    ), 1);
+                    // Return height in pixels (max 80px), minimum 4px if there's at least 1
+                    return Math.max((count / maxCount) * 80, 4);
                 },
 
                 getThemeSentiment(theme) {
                     if (this.selectedIndex === null) return null;
                     const result = this.results[this.selectedIndex];
                     if (!result?.sentiment?.answers || !theme?.answer_ids) return null;
-
-                    const scores = theme.answer_ids
-                        .map(id => result.sentiment.answers.find(a => a.id === id)?.score)
-                        .filter(s => s != null);
-
+                    const scores = theme.answer_ids.map(id => result.sentiment.answers.find(a => a.id === id)?.score).filter(s => s != null);
                     if (scores.length === 0) return null;
                     return scores.reduce((a, b) => a + b, 0) / scores.length;
                 },
 
-                getAnswerSentimentBg(answerId) {
-                    const score = this.getAnswerSentiment(answerId);
-                    if (score == null) return '#f9fafb'; // gray-50
-                    // Subtle background colors
-                    if (score >= 0.7) return 'rgba(34, 197, 94, 0.08)';  // green tint
-                    if (score >= 0.4) return '#f9fafb';                   // neutral gray
-                    return 'rgba(239, 68, 68, 0.08)';                     // red tint
-                },
-
                 getAnswerSentimentBorder(answerId) {
-                    const score = this.getAnswerSentiment(answerId);
-                    if (score == null) return '#e5e7eb'; // gray-200
-                    if (score >= 0.7) return 'rgba(34, 197, 94, 0.5)';   // green
-                    if (score >= 0.4) return '#e5e7eb';                   // neutral
-                    return 'rgba(239, 68, 68, 0.5)';                      // red
+                    const result = this.results[this.selectedIndex];
+                    if (!result?.sentiment?.answers) return '#e5e7eb';
+                    const answer = result.sentiment.answers.find(a => a.id === answerId);
+                    const score = answer?.score;
+                    if (score == null) return '#e5e7eb';
+                    if (score >= 7) return 'rgba(34, 197, 94, 0.5)';
+                    if (score >= 4) return '#e5e7eb';
+                    return 'rgba(239, 68, 68, 0.5)';
                 },
 
                 async runAll() {
                     this.isRunning = true;
                     this.results.forEach(r => { if (r.answer_count > 0) r.status = 'running'; });
-
                     try {
                         const response = await fetch('/results/api/run-all/', {
                             method: 'POST',
-                            headers: {
-                                'X-CSRFToken': this.getCsrfToken(),
-                                'Content-Type': 'application/json'
-                            }
+                            headers: { 'X-CSRFToken': this.getCsrfToken(), 'Content-Type': 'application/json' }
                         });
-
-                        if (response.ok) {
-                            await this.loadResults();
-                        } else {
-                            const data = await response.json();
-                            alert('Processing failed: ' + (data.error || 'Unknown error'));
-                        }
+                        if (response.ok) await this.loadResults();
+                        else alert('Processing failed');
                     } catch (error) {
                         alert('Network error: ' + error.message);
                     } finally {
@@ -581,18 +486,14 @@
 
                 getCsrfToken() {
                     const name = 'csrftoken';
-                    let cookieValue = null;
-                    if (document.cookie && document.cookie !== '') {
+                    if (document.cookie) {
                         const cookies = document.cookie.split(';');
-                        for (let i = 0; i < cookies.length; i++) {
-                            const cookie = cookies[i].trim();
-                            if (cookie.substring(0, name.length + 1) === (name + '=')) {
-                                cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
-                                break;
-                            }
+                        for (let cookie of cookies) {
+                            cookie = cookie.trim();
+                            if (cookie.startsWith(name + '=')) return decodeURIComponent(cookie.substring(name.length + 1));
                         }
                     }
-                    return cookieValue;
+                    return null;
                 }
             };
         }

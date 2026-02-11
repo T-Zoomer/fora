@@ -1,4 +1,5 @@
 import hashlib
+import json
 import tempfile
 from pathlib import Path
 
@@ -8,7 +9,8 @@ from django.shortcuts import render, redirect, get_object_or_404
 from django.views.decorators.http import require_http_methods
 from openai import OpenAI
 
-from .models import Question, Answer, Respondent
+from .models import Interview, Answer, Respondent
+from .interview_service import conduct_interview, get_opening_message, get_topics_status, INTERVIEW_TOPICS
 
 # Cache directory for TTS audio files
 TTS_CACHE_DIR = Path(tempfile.gettempdir()) / 'fora_tts_cache'
@@ -28,41 +30,41 @@ def get_or_create_respondent(request):
     return respondent
 
 
-def question_view(request, question_id=None):
-    questions = Question.objects.all()
+def interview_detail_view(request, interview_id=None):
+    interviews = Interview.objects.all()
 
-    if not questions.exists():
+    if not interviews.exists():
         return render(request, 'questions/no_questions.html')
 
-    if question_id is None:
-        question = questions.first()
+    if interview_id is None:
+        interview = interviews.first()
     else:
-        question = get_object_or_404(Question, id=question_id)
+        interview = get_object_or_404(Interview, id=interview_id)
 
-    question_list = list(questions)
-    current_index = question_list.index(question)
-    total = len(question_list)
+    interview_list = list(interviews)
+    current_index = interview_list.index(interview)
+    total = len(interview_list)
 
     return render(request, 'questions/question.html', {
-        'question': question,
+        'interview': interview,
         'current': current_index + 1,
         'total': total,
     })
 
 
 @require_http_methods(["POST"])
-def submit_answer(request, question_id):
-    question = get_object_or_404(Question, id=question_id)
+def submit_answer(request, interview_id):
+    interview = get_object_or_404(Interview, id=interview_id)
     answer_text = request.POST.get('answer', '').strip()
 
     if answer_text:
         respondent = get_or_create_respondent(request)
-        Answer.objects.create(question=question, text=answer_text, respondent=respondent)
+        Answer.objects.create(interview=interview, text=answer_text, respondent=respondent)
 
-    next_question = Question.objects.filter(order__gt=question.order).first()
+    next_interview = Interview.objects.filter(order__gt=interview.order).first()
 
-    if next_question:
-        return redirect('question', question_id=next_question.id)
+    if next_interview:
+        return redirect('interview_detail', interview_id=next_interview.id)
     else:
         return redirect('done')
 
@@ -71,32 +73,32 @@ def done_view(request):
     return render(request, 'questions/done.html')
 
 
-def question_api_view(request, question_id):
-    """Return question data as JSON for voice mode."""
-    question = get_object_or_404(Question, id=question_id)
-    questions = Question.objects.all()
-    question_list = list(questions)
-    current_index = question_list.index(question)
-    total = len(question_list)
+def interview_api_view(request, interview_id):
+    """Return interview data as JSON for voice mode."""
+    interview = get_object_or_404(Interview, id=interview_id)
+    interviews = Interview.objects.all()
+    interview_list = list(interviews)
+    current_index = interview_list.index(interview)
+    total = len(interview_list)
 
-    next_question = Question.objects.filter(order__gt=question.order).first()
+    next_interview = Interview.objects.filter(order__gt=interview.order).first()
 
     return JsonResponse({
-        'id': question.id,
-        'text': question.text,
+        'id': interview.id,
+        'text': interview.text,
         'current': current_index + 1,
         'total': total,
-        'next_question_id': next_question.id if next_question else None,
+        'next_interview_id': next_interview.id if next_interview else None,
     })
 
 
-def questions_api_view(request):
-    """Return all questions as JSON for single-page app."""
-    questions = Question.objects.all().order_by('order')
+def interviews_api_view(request):
+    """Return all interviews as JSON for single-page app."""
+    interviews = Interview.objects.all().order_by('order')
     return JsonResponse({
-        'questions': [
-            {'id': q.id, 'text': q.text}
-            for q in questions
+        'interviews': [
+            {'id': i.id, 'text': i.text}
+            for i in interviews
         ]
     })
 
@@ -107,25 +109,25 @@ def submit_answer_api(request):
     import json
     try:
         data = json.loads(request.body)
-        question_id = data.get('question_id')
+        interview_id = data.get('interview_id')
         answer_text = data.get('answer', '').strip()
 
-        if question_id and answer_text:
-            question = get_object_or_404(Question, id=question_id)
+        if interview_id and answer_text:
+            interview = get_object_or_404(Interview, id=interview_id)
             respondent = get_or_create_respondent(request)
-            Answer.objects.create(question=question, text=answer_text, respondent=respondent)
+            Answer.objects.create(interview=interview, text=answer_text, respondent=respondent)
             return JsonResponse({'success': True})
         return JsonResponse({'success': False, 'error': 'Missing data'}, status=400)
     except json.JSONDecodeError:
         return JsonResponse({'success': False, 'error': 'Invalid JSON'}, status=400)
 
 
-def tts_view(request, question_id):
-    """Generate TTS audio for a question using OpenAI's TTS API."""
-    question = get_object_or_404(Question, id=question_id)
+def tts_view(request, interview_id):
+    """Generate TTS audio for an interview using OpenAI's TTS API."""
+    interview = get_object_or_404(Interview, id=interview_id)
 
-    # Create cache key based on question text
-    cache_key = hashlib.md5(question.text.encode()).hexdigest()
+    # Create cache key based on interview text
+    cache_key = hashlib.md5(interview.text.encode()).hexdigest()
     cache_file = TTS_CACHE_DIR / f'{cache_key}.mp3'
 
     # Return cached audio if available
@@ -137,7 +139,7 @@ def tts_view(request, question_id):
     response = client.audio.speech.create(
         model='tts-1',
         voice='alloy',
-        input=question.text,
+        input=interview.text,
     )
 
     # Save to cache
@@ -196,3 +198,72 @@ def realtime_session_view(request):
         return JsonResponse(response.json())
     else:
         return JsonResponse({'error': response.text}, status=response.status_code)
+
+
+def interview_view(request):
+    """Main interview page - chat-only mode."""
+    return render(request, 'questions/interview.html')
+
+
+def interview_topics_api(request):
+    """Return interview topics configuration."""
+    return JsonResponse({
+        'topics': [
+            {'id': t['id'], 'name': t['name']}
+            for t in INTERVIEW_TOPICS
+        ],
+        'opening_message': get_opening_message()
+    })
+
+
+@require_http_methods(["POST"])
+def interview_chat_api(request):
+    """Handle interview chat messages using two-AI approach."""
+    try:
+        data = json.loads(request.body)
+        user_message = data.get('message', '').strip()
+        chat_history = data.get('history', [])
+        covered_topics = data.get('covered_topics', [])
+
+        if not user_message:
+            return JsonResponse({'error': 'Message is required'}, status=400)
+
+        result = conduct_interview(user_message, chat_history, covered_topics)
+
+        # Store user responses for newly covered topics
+        respondent = get_or_create_respondent(request)
+        newly_covered = [t for t in result['covered_topics'] if t not in covered_topics]
+        topic_responses = result.get('topic_responses', {})
+
+        for topic_id in newly_covered:
+            # Use the AI-extracted response for this topic, fallback to user_message
+            answer_text = topic_responses.get(topic_id, user_message)
+
+            # Find or create an interview for this topic
+            topic = next(t for t in INTERVIEW_TOPICS if t['id'] == topic_id)
+            interview_obj, _ = Interview.objects.get_or_create(
+                text=topic['name'],
+                defaults={'order': INTERVIEW_TOPICS.index(topic)}
+            )
+            Answer.objects.create(
+                interview=interview_obj,
+                respondent=respondent,
+                text=answer_text
+            )
+
+        # Build answers dict for frontend
+        raw_answers = {topic_id: topic_responses.get(topic_id, user_message) for topic_id in newly_covered}
+
+        return JsonResponse({
+            'success': True,
+            'response': result['response'],
+            'covered_topics': result['covered_topics'],
+            'raw_answers': raw_answers,
+            'interview_complete': result['interview_complete'],
+            'analysis': result.get('analysis', {})  # Include analysis for debugging
+        })
+
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'Invalid JSON'}, status=400)
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)

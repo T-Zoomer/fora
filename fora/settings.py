@@ -45,7 +45,6 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'questions',
     'results',
-    'analysis',
 ]
 
 MIDDLEWARE = [

@@ -6,12 +6,12 @@ from openai import OpenAI
 from questions.models import Answer
 
 
-def run_thematic_coding(question):
+def run_thematic_coding(interview):
     """
     Analyze answers using GPT-4o to identify themes/codes.
     Returns a list of themes with their descriptions and associated answer IDs.
     """
-    answers = list(Answer.objects.filter(question=question).values('id', 'text'))
+    answers = list(Answer.objects.filter(interview=interview).values('id', 'text'))
 
     if not answers:
         return []
@@ -27,13 +27,20 @@ def run_thematic_coding(question):
             {
                 "role": "system",
                 "content": """You are an expert qualitative researcher skilled in thematic coding.
-Analyze the provided survey answers and identify the main themes/codes present.
-For each theme, provide:
-1. A short name (2-5 words)
-2. A description (1-2 sentences)
-3. The IDs of answers that belong to this theme
+Analyze the provided interview answers and identify the main themes/codes present.
 
-An answer can belong to multiple themes. Be thorough but don't create redundant themes.
+IMPORTANT GUIDELINES:
+1. Focus on the WHY - themes should capture underlying causes, factors, and drivers
+2. Theme names should be specific and actionable (e.g., "Meeting overload", "Remote work flexibility", "Manager support", "Unclear priorities")
+3. DO NOT create sentiment-based themes like "Positive feelings", "Negative experiences", "Satisfied employees" - sentiment is already captured separately
+4. An answer can and SHOULD belong to multiple themes when it mentions multiple factors
+5. MAXIMUM 9 THEMES - prioritize the most significant and frequently mentioned factors
+6. Each theme must have at least 2 answers - do not create themes for one-off mentions
+
+For each theme, provide:
+1. A short descriptive name (2-5 words) that explains WHAT is affecting people
+2. A description (1-2 sentences) explaining the theme
+3. The IDs of ALL answers that mention this factor
 
 Respond in JSON format:
 {
@@ -48,23 +55,29 @@ Respond in JSON format:
             },
             {
                 "role": "user",
-                "content": f"Analyze these survey answers and identify themes:\n\n{answers_text}"
+                "content": f"Analyze these interview answers and identify themes based on the underlying factors and causes mentioned:\n\n{answers_text}"
             }
         ],
         response_format={"type": "json_object"}
     )
 
     result = json.loads(response.choices[0].message.content)
-    return result.get("themes", [])
+    themes = result.get("themes", [])
+
+    # Filter themes with at least 2 answers and limit to 9
+    themes = [t for t in themes if len(t.get("answer_ids", [])) >= 2]
+    themes = themes[:9]
+
+    return themes
 
 
-def run_sentiment_analysis(question):
+def run_sentiment_analysis(interview):
     """
     Analyze the sentiment of each answer using GPT-4o.
     Returns a dict with average score and per-answer scores.
-    Scores range from 0.0 (very negative) to 1.0 (very positive).
+    Scores range from 1 (very negative) to 10 (very positive).
     """
-    answers = list(Answer.objects.filter(question=question).values('id', 'text'))
+    answers = list(Answer.objects.filter(interview=interview).values('id', 'text'))
 
     if not answers:
         return {"average": None, "answers": []}
@@ -79,16 +92,16 @@ def run_sentiment_analysis(question):
             {
                 "role": "system",
                 "content": """You are an expert at sentiment analysis.
-Score each answer from 0.0 to 1.0 based on emotional tone:
-- 0.0 = very negative
-- 0.5 = neutral
-- 1.0 = very positive
+Score each answer from 1 to 10 based on emotional tone:
+- 1 = very negative
+- 5 = neutral
+- 10 = very positive
 
 Respond in JSON format:
 {
   "answers": [
-    {"id": 1, "score": 0.8},
-    {"id": 2, "score": 0.3}
+    {"id": 1, "score": 8},
+    {"id": 2, "score": 3}
   ]
 }
 
@@ -96,7 +109,7 @@ Include every answer ID provided. Be consistent in your scoring."""
             },
             {
                 "role": "user",
-                "content": f"Score the sentiment of these survey answers:\n\n{answers_text}"
+                "content": f"Score the sentiment of these interview answers:\n\n{answers_text}"
             }
         ],
         response_format={"type": "json_object"}
@@ -108,7 +121,7 @@ Include every answer ID provided. Be consistent in your scoring."""
     # Calculate average
     if answer_scores:
         avg = sum(a["score"] for a in answer_scores) / len(answer_scores)
-        avg = round(avg, 2)
+        avg = round(avg, 1)
     else:
         avg = None
 
@@ -118,12 +131,12 @@ Include every answer ID provided. Be consistent in your scoring."""
     }
 
 
-def generate_summary(question):
+def generate_summary(interview):
     """
-    Generate an AI summary of all answers to a question.
+    Generate an AI summary of all answers to an interview.
     Returns a concise paragraph summarizing the key points.
     """
-    answers = list(Answer.objects.filter(question=question).values('id', 'text'))
+    answers = list(Answer.objects.filter(interview=interview).values('id', 'text'))
 
     if not answers:
         return ""
@@ -144,7 +157,7 @@ Write in a neutral, professional tone. Do not use bullet points."""
             },
             {
                 "role": "user",
-                "content": f"Summarize these responses to the question \"{question.text}\":\n\n{answers_text}"
+                "content": f"Summarize these responses to the interview \"{interview.text}\":\n\n{answers_text}"
             }
         ],
         max_tokens=300
@@ -153,31 +166,50 @@ Write in a neutral, professional tone. Do not use bullet points."""
     return response.choices[0].message.content
 
 
-def chat_with_answers(question, user_message, chat_history=None):
+def chat_with_all_answers(user_message, chat_history=None):
     """
-    Chat about the answers to a specific question using GPT-4o.
-    The AI has access to all answers and can answer questions about them.
+    Chat about all interview answers using GPT-4o.
+    The AI has access to all interviews and their answers.
     """
-    answers = list(Answer.objects.filter(question=question).values('id', 'text'))
+    from questions.models import Interview
 
-    if not answers:
-        return "There are no answers to this question yet."
+    interviews = Interview.objects.all().order_by('order')
+
+    # Build context with all interviews and answers
+    context_parts = []
+    total_answers = 0
+
+    for interview in interviews:
+        answers = list(Answer.objects.filter(interview=interview).values('text'))
+        if answers:
+            answers_text = "\n".join([f"  - {a['text']}" for a in answers])
+            context_parts.append(f"**{interview.text}** ({len(answers)} responses):\n{answers_text}")
+            total_answers += len(answers)
+
+    if total_answers == 0:
+        return "There are no interview responses yet."
+
+    full_context = "\n\n".join(context_parts)
 
     client = OpenAI(api_key=settings.OPENAI_API_KEY)
-
-    answers_text = "\n".join([f"- {a['text']}" for a in answers])
 
     messages = [
         {
             "role": "system",
-            "content": f"""You are a helpful assistant that answers questions about survey responses.
+            "content": f"""You are a helpful assistant that analyzes survey responses about workplace productivity and wellbeing.
 
-The survey question was: "{question.text}"
+Here is the complete survey data:
 
-Here are all the responses ({len(answers)} total):
-{answers_text}
+{full_context}
 
-Based on these responses, answer the user's questions. Be specific and reference the actual responses when relevant. If asked for statistics, analyze the responses. If asked for summaries, be concise but comprehensive."""
+Based on this data, answer the user's questions. You can:
+- Summarize findings across all questions
+- Identify patterns and correlations
+- Provide specific examples from responses
+- Suggest actionable insights for improving productivity
+- Compare responses across different questions
+
+Be specific and reference actual responses when relevant. Be concise but comprehensive."""
         }
     ]
 
