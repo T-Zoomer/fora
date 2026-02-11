@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Done</title>
+    <title>Question</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap');
@@ -24,16 +24,7 @@
     </script>
 </head>
 <body class="bg-white min-h-screen font-sans">
-    <!-- Root Header -->
-    <header class="border-b border-gray-200 px-6 py-4">
-        <div class="flex items-center justify-between">
-            <h1 class="text-lg font-mono tracking-wide">PROOF OF CONCEPT</h1>
-            <nav class="flex gap-6">
-                <a href="/" class="text-sm text-gray-900 font-medium">Questions</a>
-                <a href="/analysis/" class="text-sm text-gray-600 hover:text-gray-900">Analysis</a>
-            </nav>
-        </div>
-    </header>
+    {% include "includes/header.html" %}
 
     <div class="flex items-center justify-center p-6" style="min-height: calc(100vh - 65px);">
         <div class="w-full max-w-xl">

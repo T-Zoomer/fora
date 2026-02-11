@@ -8,11 +8,24 @@ from django.shortcuts import render, redirect, get_object_or_404
 from django.views.decorators.http import require_http_methods
 from openai import OpenAI
 
-from .models import Question, Answer
+from .models import Question, Answer, Respondent
 
 # Cache directory for TTS audio files
 TTS_CACHE_DIR = Path(tempfile.gettempdir()) / 'fora_tts_cache'
 TTS_CACHE_DIR.mkdir(exist_ok=True)
+
+
+def get_or_create_respondent(request):
+    """Get existing respondent from session or create a new one."""
+    respondent_id = request.session.get('respondent_id')
+    if respondent_id:
+        try:
+            return Respondent.objects.get(id=respondent_id)
+        except Respondent.DoesNotExist:
+            pass
+    respondent = Respondent.objects.create()
+    request.session['respondent_id'] = respondent.id
+    return respondent
 
 
 def question_view(request, question_id=None):
@@ -43,7 +56,8 @@ def submit_answer(request, question_id):
     answer_text = request.POST.get('answer', '').strip()
 
     if answer_text:
-        Answer.objects.create(question=question, text=answer_text)
+        respondent = get_or_create_respondent(request)
+        Answer.objects.create(question=question, text=answer_text, respondent=respondent)
 
     next_question = Question.objects.filter(order__gt=question.order).first()
 
@@ -98,7 +112,8 @@ def submit_answer_api(request):
 
         if question_id and answer_text:
             question = get_object_or_404(Question, id=question_id)
-            Answer.objects.create(question=question, text=answer_text)
+            respondent = get_or_create_respondent(request)
+            Answer.objects.create(question=question, text=answer_text, respondent=respondent)
             return JsonResponse({'success': True})
         return JsonResponse({'success': False, 'error': 'Missing data'}, status=400)
     except json.JSONDecodeError:

@@ -3,159 +3,190 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Analysis Dashboard</title>
+    <title>Analysis</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
     <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap');
         .scrollbar-thin::-webkit-scrollbar { width: 4px; }
         .scrollbar-thin::-webkit-scrollbar-track { background: transparent; }
         .scrollbar-thin::-webkit-scrollbar-thumb { background: #e5e7eb; border-radius: 2px; }
     </style>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: { dark: '#1A1A1A' },
+                    fontFamily: { sans: ['Inter', 'system-ui', 'sans-serif'] }
+                }
+            }
+        }
+    </script>
 </head>
-<body class="min-h-screen bg-white">
-    <!-- Root Header -->
-    <header class="border-b border-gray-200 px-6 py-4">
-        <div class="flex items-center justify-between">
-            <h1 class="text-lg font-mono tracking-wide">PROOF OF CONCEPT</h1>
-            <nav class="flex gap-6">
-                <a href="/" class="text-sm text-gray-600 hover:text-gray-900">Questions</a>
-                <a href="/analysis/" class="text-sm text-gray-900 font-medium">Analysis</a>
-            </nav>
-        </div>
-    </header>
+<body class="min-h-screen bg-white font-sans">
+    {% include "includes/header.html" %}
 
-    <div x-data="analysisApp()" x-init="loadResults()" class="h-[calc(100vh-65px)] flex">
-        <!-- Left Panel: Questions List -->
-        <div class="w-80 border-r border-gray-200 flex flex-col">
-            <!-- Run Analysis Button -->
-            <div class="p-4 border-b border-gray-100">
-                <button
-                    @click="runAllAnalysis()"
-                    :disabled="isRunning"
-                    :class="isRunning ? 'bg-gray-100 text-gray-400 cursor-not-allowed' : 'bg-gray-900 text-white hover:bg-gray-800'"
-                    class="w-full px-4 py-2 text-sm font-medium transition-colors"
-                >
-                    <span x-show="!isRunning">Run Analysis</span>
-                    <span x-show="isRunning">Analyzing...</span>
-                </button>
-                <p class="text-xs text-gray-400 mt-2 text-center">
-                    {{ questions_count }} questions · {{ total_answers }} answers
-                </p>
+    <div x-data="analysisApp()" x-init="init()" class="p-8">
+        <div class="max-w-4xl mx-auto">
+            <h1 class="text-2xl font-medium text-gray-900 mb-2">Correlation Analysis</h1>
+            <p class="text-gray-500 mb-6">Understand what drives outcomes across questions</p>
+
+            <!-- Loading Questions -->
+            <div x-show="loadingQuestions" class="text-center py-12 text-gray-400">
+                Loading questions...
             </div>
 
-            <!-- Questions List -->
-            <div class="flex-1 overflow-y-auto scrollbar-thin">
-                <div x-show="loading" class="p-4 text-center text-gray-400 text-sm">
-                    Loading...
+            <div x-show="!loadingQuestions">
+                <!-- Controls -->
+                <div class="bg-gray-50 rounded-lg p-4 mb-6 space-y-4">
+                    <!-- Target Question -->
+                    <div class="flex items-center gap-4">
+                        <label class="text-sm font-medium text-gray-700 w-32">Explain:</label>
+                        <select
+                            x-model="targetQuestionId"
+                            @change="onTargetChange()"
+                            class="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-gray-300"
+                        >
+                            <option value="">Select a question...</option>
+                            <template x-for="q in questions" :key="q.id">
+                                <option :value="q.id" x-text="q.text.substring(0, 60) + (q.text.length > 60 ? '...' : '')"></option>
+                            </template>
+                        </select>
+                    </div>
+
+                    <!-- Target Theme (only for theme-based targets) -->
+                    <div x-show="targetQuestion && !targetQuestion.has_sentiment" class="flex items-center gap-4">
+                        <label class="text-sm font-medium text-gray-700 w-32">Focus on theme:</label>
+                        <select
+                            x-model="targetTheme"
+                            @change="loadCorrelations()"
+                            class="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-gray-300"
+                        >
+                            <option value="">Select a theme...</option>
+                            <template x-for="theme in targetQuestion?.themes || []" :key="theme">
+                                <option :value="theme" x-text="theme"></option>
+                            </template>
+                        </select>
+                    </div>
+
+                    <!-- Source Questions -->
+                    <div class="flex items-center gap-4">
+                        <label class="text-sm font-medium text-gray-700 w-32">Using themes from:</label>
+                        <select
+                            x-model="sourceQuestionId"
+                            @change="loadCorrelations()"
+                            class="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-gray-300"
+                        >
+                            <option value="">Select a question...</option>
+                            <template x-for="q in sourceQuestions" :key="q.id">
+                                <option :value="q.id" x-text="q.text.substring(0, 60) + (q.text.length > 60 ? '...' : '')"></option>
+                            </template>
+                        </select>
+                    </div>
                 </div>
 
-                <template x-for="(result, index) in results" :key="result.question_id">
-                    <div
-                        @click="selectQuestion(index)"
-                        :class="selectedIndex === index ? 'bg-gray-50 border-l-2 border-gray-900' : 'border-l-2 border-transparent hover:bg-gray-50'"
-                        class="p-4 cursor-pointer transition-colors"
-                    >
-                        <p class="text-xs text-gray-400 mb-1" x-text="'Q' + (index + 1)"></p>
-                        <p class="text-sm text-gray-900 line-clamp-2" x-text="result.question_text"></p>
+                <!-- Loading Correlations -->
+                <div x-show="loadingCorrelations" class="text-center py-12 text-gray-400">
+                    Calculating correlations...
+                </div>
 
-                        <p class="text-xs text-gray-400 mt-2" x-show="result.status === 'completed'">
-                            <span x-text="result.themes.length + ' themes · ' + result.answer_count + ' answers'"></span>
-                            <span x-show="result.sentiment?.average != null" class="ml-1">
-                                · <span x-text="getSentimentEmoji(result.sentiment?.average)"></span>
-                                <span x-text="result.sentiment?.average?.toFixed(2)"></span>
-                            </span>
-                        </p>
-                        <p x-show="result.status !== 'completed'" class="text-xs text-gray-400 mt-2" x-text="result.status === 'running' ? 'Analyzing...' : 'Not analyzed'"></p>
-                    </div>
-                </template>
-            </div>
-        </div>
+                <!-- No Data State -->
+                <div x-show="!loadingCorrelations && (!targetQuestionId || !sourceQuestionId)" class="text-center py-12 text-gray-400">
+                    Select questions to analyze.
+                </div>
 
-        <!-- Right Panel: Selected Question Details -->
-        <div class="flex-1 overflow-y-auto scrollbar-thin">
-            <!-- No Selection State -->
-            <div x-show="selectedIndex === null" class="h-full flex items-center justify-center">
-                <p class="text-gray-400">Select a question to view details</p>
-            </div>
+                <div x-show="!loadingCorrelations && targetQuestionId && sourceQuestionId && themes.length === 0 && !needsThemeSelection" class="text-center py-12 text-gray-400">
+                    <p>Not enough data for correlation analysis.</p>
+                    <p class="text-sm mt-2">Requires respondent tracking across multiple questions.</p>
+                </div>
 
-            <!-- Selected Question Details -->
-            <div x-show="selectedIndex !== null && results[selectedIndex]" class="p-8 max-w-3xl">
-                    <!-- Question Header -->
-                    <div class="mb-8">
-                        <p class="text-xs text-gray-400 mb-2" x-text="'Question ' + (selectedIndex + 1)"></p>
-                        <h2 class="text-xl font-medium text-gray-900" x-text="results[selectedIndex]?.question_text"></h2>
-                        <p class="text-sm text-gray-500 mt-2" x-text="(results[selectedIndex]?.answer_count || 0) + ' answers'"></p>
+                <div x-show="!loadingCorrelations && needsThemeSelection" class="text-center py-12 text-gray-400">
+                    Select a theme to explain.
+                </div>
+
+                <!-- Results -->
+                <div x-show="!loadingCorrelations && themes.length > 0">
+                    <p class="text-sm text-gray-500 mb-4">
+                        Based on <span class="font-medium" x-text="respondentCount"></span> respondents.
+                        <span x-show="analysisType === 'sentiment'">Analyzing sentiment correlation.</span>
+                        <span x-show="analysisType === 'theme'">
+                            Analyzing co-occurrence with "<span class="font-medium" x-text="targetTheme"></span>"
+                            (<span x-text="targetThemeCount"></span> respondents).
+                        </span>
+                    </p>
+
+                    <!-- Chart -->
+                    <div class="mb-6" :style="'height: ' + Math.max(250, themes.length * 28) + 'px'">
+                        <canvas id="correlation-chart"></canvas>
                     </div>
 
-                    <!-- Not Analyzed State -->
-                    <div x-show="results[selectedIndex]?.status !== 'completed'" class="py-12 text-center">
-                        <p class="text-gray-400" x-text="results[selectedIndex]?.status === 'running' ? 'Analyzing...' : 'Run analysis to see themes'"></p>
+                    <!-- Legend -->
+                    <div class="flex justify-center gap-8 mb-8 text-sm">
+                        <div class="flex items-center gap-2">
+                            <div class="w-4 h-4 rounded" style="background: rgba(239, 68, 68, 0.8)"></div>
+                            <span class="text-gray-600" x-text="analysisType === 'sentiment' ? 'Associated with feeling bad' : 'Negative correlation'"></span>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <div class="w-4 h-4 rounded" style="background: rgba(34, 197, 94, 0.8)"></div>
+                            <span class="text-gray-600" x-text="analysisType === 'sentiment' ? 'Associated with feeling good' : 'Positive correlation'"></span>
+                        </div>
                     </div>
 
-                    <!-- Results -->
-                    <div x-show="results[selectedIndex]?.status === 'completed'">
-                        <!-- Sentiment Score -->
-                        <div x-show="results[selectedIndex]?.sentiment?.average != null" class="mb-8 p-4 border border-gray-200 rounded-lg">
-                            <h3 class="text-xs font-medium text-gray-500 uppercase tracking-wide mb-3">Sentiment Score</h3>
-                            <div class="flex items-center gap-4">
-                                <div class="flex-1">
-                                    <div class="h-3 bg-gray-100 rounded-full overflow-hidden">
-                                        <div
-                                            class="h-full rounded-full transition-all duration-300"
-                                            :style="'width: ' + (results[selectedIndex]?.sentiment?.average * 100) + '%; background: ' + getSentimentColor(results[selectedIndex]?.sentiment?.average)"
-                                        ></div>
+                    <!-- Insights -->
+                    <div class="grid md:grid-cols-2 gap-6">
+                        <!-- Positive -->
+                        <div class="border border-green-200 bg-green-50 rounded-lg p-5">
+                            <h3 class="font-medium text-green-900 mb-3" x-text="analysisType === 'sentiment' ? 'Drivers of Positive Mood' : 'Positively Correlated'"></h3>
+                            <div class="space-y-2">
+                                <template x-for="theme in positiveThemes.slice(0, 5)" :key="theme.name">
+                                    <div class="text-sm">
+                                        <span class="font-medium text-green-800" x-text="theme.name"></span>
+                                        <template x-if="analysisType === 'sentiment'">
+                                            <span class="text-green-600 text-xs ml-1">
+                                                (avg <span x-text="theme.mean_with"></span> vs <span x-text="theme.mean_without"></span>)
+                                            </span>
+                                        </template>
+                                        <template x-if="analysisType === 'theme'">
+                                            <span class="text-green-600 text-xs ml-1">
+                                                (<span x-text="theme.lift"></span>x more likely)
+                                            </span>
+                                        </template>
                                     </div>
-                                    <div class="flex justify-between mt-1 text-xs text-gray-400">
-                                        <span>Negative</span>
-                                        <span>Neutral</span>
-                                        <span>Positive</span>
-                                    </div>
-                                </div>
-                                <div class="text-right">
-                                    <span class="text-xl" x-text="getSentimentEmoji(results[selectedIndex]?.sentiment?.average)"></span>
-                                    <p class="text-base font-medium text-gray-900" x-text="results[selectedIndex]?.sentiment?.average?.toFixed(2)"></p>
-                                </div>
+                                </template>
+                                <p x-show="positiveThemes.length === 0" class="text-sm text-green-600">No strong positive correlations.</p>
                             </div>
                         </div>
 
-                        <!-- Large Chart -->
-                        <div x-show="results[selectedIndex]?.themes?.length > 0" class="mb-10" :style="'height: ' + getChartHeight() + 'px'">
-                            <canvas id="detail-chart"></canvas>
-                        </div>
-
-                        <!-- Themes List -->
-                        <div class="space-y-8">
-                            <template x-for="(theme, themeIndex) in results[selectedIndex]?.themes || []" :key="theme.name">
-                                <div class="border-l-2 border-gray-200 pl-4" x-data="{ expanded: false }">
-                                    <div class="flex items-baseline gap-3 mb-2">
-                                        <h3 class="font-medium text-gray-900" x-text="theme.name"></h3>
-                                        <span class="text-xs text-gray-400" x-text="theme.count + ' answers'"></span>
-                                    </div>
-                                    <p class="text-sm text-gray-500 mb-4" x-text="theme.description"></p>
-
-                                    <!-- Answers with sentiment colors -->
-                                    <div class="space-y-2">
-                                        <template x-for="(answer, answerIndex) in (expanded ? theme.answers : theme.answers.slice(0, 5))" :key="answer.id">
-                                            <p
-                                                class="text-sm text-gray-600 p-3 rounded border-l-2"
-                                                :style="'background-color: ' + getAnswerSentimentBg(answer.id) + '; border-color: ' + getAnswerSentimentBorder(answer.id)"
-                                                x-text="answer.text"
-                                            ></p>
+                        <!-- Negative -->
+                        <div class="border border-red-200 bg-red-50 rounded-lg p-5">
+                            <h3 class="font-medium text-red-900 mb-3" x-text="analysisType === 'sentiment' ? 'Drivers of Negative Mood' : 'Negatively Correlated'"></h3>
+                            <div class="space-y-2">
+                                <template x-for="theme in negativeThemes.slice(0, 5)" :key="theme.name">
+                                    <div class="text-sm">
+                                        <span class="font-medium text-red-800" x-text="theme.name"></span>
+                                        <template x-if="analysisType === 'sentiment'">
+                                            <span class="text-red-600 text-xs ml-1">
+                                                (avg <span x-text="theme.mean_with"></span> vs <span x-text="theme.mean_without"></span>)
+                                            </span>
                                         </template>
-                                        <button
-                                            x-show="theme.answers.length > 5"
-                                            @click="expanded = !expanded"
-                                            class="text-xs text-gray-500 hover:text-gray-700 cursor-pointer"
-                                            x-text="expanded ? 'Show less' : '+ ' + (theme.answers.length - 5) + ' more answers'"
-                                        ></button>
+                                        <template x-if="analysisType === 'theme'">
+                                            <span class="text-red-600 text-xs ml-1">
+                                                (<span x-text="theme.lift"></span>x likely)
+                                            </span>
+                                        </template>
                                     </div>
-                                </div>
-                            </template>
+                                </template>
+                                <p x-show="negativeThemes.length === 0" class="text-sm text-red-600">No strong negative correlations.</p>
+                            </div>
                         </div>
-
-                        <p x-show="results[selectedIndex]?.themes?.length === 0" class="text-gray-400 py-12 text-center">No themes identified for this question.</p>
                     </div>
+
+                    <!-- Method Note -->
+                    <p class="text-xs text-gray-400 mt-8 text-center">
+                        <span x-show="analysisType === 'sentiment'">Point-biserial correlation between theme presence and sentiment score.</span>
+                        <span x-show="analysisType === 'theme'">Phi coefficient between theme co-occurrence. Lift = how many times more likely.</span>
+                    </p>
                 </div>
             </div>
         </div>
@@ -164,209 +195,182 @@
     <script>
         function analysisApp() {
             return {
-                results: [],
-                loading: true,
-                isRunning: {{ is_running|yesno:"true,false" }},
-                selectedIndex: null,
-                detailChart: null,
-                chartTimeout: null,
+                loadingQuestions: true,
+                loadingCorrelations: false,
+                questions: [],
+                targetQuestionId: '',
+                targetTheme: '',
+                sourceQuestionId: '',
+                themes: [],
+                respondentCount: 0,
+                targetThemeCount: 0,
+                analysisType: 'sentiment',
+                chart: null,
 
-                async loadResults() {
-                    this.loading = true;
+                get targetQuestion() {
+                    return this.questions.find(q => q.id == this.targetQuestionId);
+                },
+
+                get sourceQuestions() {
+                    return this.questions.filter(q => q.id != this.targetQuestionId && q.has_themes);
+                },
+
+                get needsThemeSelection() {
+                    return this.targetQuestion && !this.targetQuestion.has_sentiment && !this.targetTheme;
+                },
+
+                get positiveThemes() {
+                    return this.themes.filter(t => t.correlation > 0.05).sort((a, b) => b.correlation - a.correlation);
+                },
+
+                get negativeThemes() {
+                    return this.themes.filter(t => t.correlation < -0.05).sort((a, b) => a.correlation - b.correlation);
+                },
+
+                async init() {
+                    await this.loadQuestions();
+
+                    // Auto-select first question with sentiment as target
+                    const sentimentQ = this.questions.find(q => q.has_sentiment);
+                    if (sentimentQ) {
+                        this.targetQuestionId = sentimentQ.id;
+                        // Auto-select first source question
+                        const firstSource = this.questions.find(q => q.id !== sentimentQ.id && q.has_themes);
+                        if (firstSource) {
+                            this.sourceQuestionId = firstSource.id;
+                            await this.loadCorrelations();
+                        }
+                    }
+                },
+
+                async loadQuestions() {
+                    this.loadingQuestions = true;
                     try {
-                        const response = await fetch('/analysis/api/results/');
+                        const response = await fetch('/analysis/api/questions/');
                         const data = await response.json();
-                        this.results = data.results || [];
+                        this.questions = data.questions || [];
+                    } catch (error) {
+                        console.error('Failed to load questions:', error);
+                    } finally {
+                        this.loadingQuestions = false;
+                    }
+                },
 
-                        // Auto-select first question with results
-                        if (this.results.length > 0) {
-                            const firstCompleted = this.results.findIndex(r => r.status === 'completed');
-                            this.selectedIndex = firstCompleted >= 0 ? firstCompleted : 0;
+                onTargetChange() {
+                    this.targetTheme = '';
+                    this.themes = [];
+                    // Reset source if it's now the same as target
+                    if (this.sourceQuestionId == this.targetQuestionId) {
+                        this.sourceQuestionId = '';
+                    }
+                    if (this.targetQuestion?.has_sentiment && this.sourceQuestionId) {
+                        this.loadCorrelations();
+                    }
+                },
+
+                async loadCorrelations() {
+                    if (!this.targetQuestionId) return;
+                    if (!this.sourceQuestionId) return;
+                    if (!this.targetQuestion.has_sentiment && !this.targetTheme) return;
+
+                    this.loadingCorrelations = true;
+                    try {
+                        let url = `/analysis/api/correlations/?target=${this.targetQuestionId}&sources=${this.sourceQuestionId}`;
+                        if (this.targetTheme) {
+                            url += `&target_theme=${encodeURIComponent(this.targetTheme)}`;
                         }
 
-                        this.$nextTick(() => this.renderDetailChart());
+                        const response = await fetch(url);
+                        const data = await response.json();
+
+                        this.themes = data.themes || [];
+                        this.respondentCount = data.respondent_count || 0;
+                        this.targetThemeCount = data.target_theme_count || 0;
+                        this.analysisType = data.analysis_type || 'sentiment';
+
+                        this.$nextTick(() => this.renderChart());
                     } catch (error) {
-                        console.error('Failed to load results:', error);
+                        console.error('Failed to load correlations:', error);
                     } finally {
-                        this.loading = false;
+                        this.loadingCorrelations = false;
                     }
                 },
 
-                selectQuestion(index) {
-                    this.selectedIndex = index;
-                    this.$nextTick(() => this.renderDetailChart());
-                },
-
-                renderDetailChart() {
-                    // Clear any pending render
-                    if (this.chartTimeout) {
-                        clearTimeout(this.chartTimeout);
-                        this.chartTimeout = null;
+                renderChart() {
+                    if (this.chart) {
+                        this.chart.destroy();
                     }
 
-                    // Destroy existing chart immediately
-                    if (this.detailChart) {
-                        this.detailChart.destroy();
-                        this.detailChart = null;
-                    }
+                    if (this.themes.length === 0) return;
 
-                    if (this.selectedIndex === null) return;
-                    const result = this.results[this.selectedIndex];
-                    if (!result || result.status !== 'completed' || !result.themes || result.themes.length === 0) return;
+                    const canvas = document.getElementById('correlation-chart');
+                    if (!canvas) return;
 
-                    // Use setTimeout to ensure DOM is fully updated
-                    this.chartTimeout = setTimeout(() => {
-                        const canvas = document.getElementById('detail-chart');
-                        if (!canvas) return;
+                    const sorted = [...this.themes].sort((a, b) => b.correlation - a.correlation);
+                    const labels = sorted.map(t => t.name);
+                    const data = sorted.map(t => t.correlation);
+                    const colors = data.map(v => v >= 0 ? 'rgba(34, 197, 94, 0.8)' : 'rgba(239, 68, 68, 0.8)');
 
-                        const labels = result.themes.map(t => t.name);
-                        const data = result.themes.map(t => t.count);
-                        const colors = this.generateColors(result.themes.length);
+                    // Determine axis range
+                    const maxAbs = Math.max(Math.abs(Math.min(...data)), Math.abs(Math.max(...data)), 0.3);
+                    const axisLimit = Math.ceil(maxAbs * 10) / 10;
 
-                        this.detailChart = new Chart(canvas, {
-                            type: 'bar',
-                            data: {
-                                labels: labels,
-                                datasets: [{
-                                    data: data,
-                                    backgroundColor: colors,
-                                    borderWidth: 0,
-                                }]
-                            },
-                            options: {
-                                indexAxis: 'y',
-                                responsive: true,
-                                maintainAspectRatio: false,
-                                animation: false,
-                                plugins: { legend: { display: false } },
-                                scales: {
-                                    x: {
-                                        beginAtZero: true,
-                                        grid: { color: '#f3f4f6' },
-                                        ticks: { stepSize: 1 }
-                                    },
-                                    y: {
-                                        grid: { display: false },
-                                        ticks: { font: { size: 13 }, color: '#374151' }
+                    this.chart = new Chart(canvas, {
+                        type: 'bar',
+                        data: {
+                            labels: labels,
+                            datasets: [{
+                                data: data,
+                                backgroundColor: colors,
+                                borderWidth: 0,
+                            }]
+                        },
+                        options: {
+                            indexAxis: 'y',
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            animation: false,
+                            plugins: {
+                                legend: { display: false },
+                                tooltip: {
+                                    callbacks: {
+                                        label: (ctx) => {
+                                            const theme = sorted[ctx.dataIndex];
+                                            if (this.analysisType === 'sentiment') {
+                                                return [
+                                                    `Correlation: ${theme.correlation}`,
+                                                    `Avg with theme: ${theme.mean_with}`,
+                                                    `Avg without: ${theme.mean_without}`,
+                                                    `Respondents: ${theme.count}`
+                                                ];
+                                            } else {
+                                                return [
+                                                    `Phi: ${theme.correlation}`,
+                                                    `Lift: ${theme.lift}x`,
+                                                    `Co-occurrences: ${theme.co_occurrence}`,
+                                                    `Respondents with theme: ${theme.count}`
+                                                ];
+                                            }
+                                        }
                                     }
                                 }
-                            }
-                        });
-                    }, 10);
-                },
-
-                generateColors(count) {
-                    const baseColors = [
-                        'rgba(99, 102, 241, 0.8)',
-                        'rgba(16, 185, 129, 0.8)',
-                        'rgba(245, 158, 11, 0.8)',
-                        'rgba(239, 68, 68, 0.8)',
-                        'rgba(139, 92, 246, 0.8)',
-                        'rgba(6, 182, 212, 0.8)',
-                        'rgba(236, 72, 153, 0.8)',
-                        'rgba(75, 85, 99, 0.8)',
-                    ];
-                    return Array.from({ length: count }, (_, i) => baseColors[i % baseColors.length]);
-                },
-
-                getChartHeight() {
-                    if (this.selectedIndex === null) return 200;
-                    const themes = this.results[this.selectedIndex]?.themes || [];
-                    // 40px per bar, minimum 150px
-                    return Math.max(150, themes.length * 40);
-                },
-
-                getSentimentEmoji(score) {
-                    if (score == null) return '';
-                    if (score >= 0.7) return '😊';
-                    if (score >= 0.4) return '😐';
-                    return '😟';
-                },
-
-                getSentimentColor(score) {
-                    if (score == null) return '#9ca3af';
-                    // Interpolate from red (0) through yellow (0.5) to green (1)
-                    if (score <= 0.5) {
-                        // Red to yellow
-                        const r = 239;
-                        const g = Math.round(68 + (score * 2) * (180 - 68));
-                        const b = 68;
-                        return `rgb(${r}, ${g}, ${b})`;
-                    } else {
-                        // Yellow to green
-                        const t = (score - 0.5) * 2;
-                        const r = Math.round(239 - t * (239 - 34));
-                        const g = Math.round(180 + t * (197 - 180));
-                        const b = Math.round(68 - t * (68 - 94));
-                        return `rgb(${r}, ${g}, ${b})`;
-                    }
-                },
-
-                getAnswerSentiment(answerId) {
-                    if (this.selectedIndex === null) return null;
-                    const result = this.results[this.selectedIndex];
-                    if (!result?.sentiment?.answers) return null;
-                    const answer = result.sentiment.answers.find(a => a.id === answerId);
-                    return answer?.score ?? null;
-                },
-
-                getAnswerSentimentBg(answerId) {
-                    const score = this.getAnswerSentiment(answerId);
-                    if (score == null) return '#f9fafb'; // gray-50
-                    // Subtle background colors
-                    if (score >= 0.7) return 'rgba(34, 197, 94, 0.08)';  // green tint
-                    if (score >= 0.4) return '#f9fafb';                   // neutral gray
-                    return 'rgba(239, 68, 68, 0.08)';                     // red tint
-                },
-
-                getAnswerSentimentBorder(answerId) {
-                    const score = this.getAnswerSentiment(answerId);
-                    if (score == null) return '#e5e7eb'; // gray-200
-                    if (score >= 0.7) return 'rgba(34, 197, 94, 0.5)';   // green
-                    if (score >= 0.4) return '#e5e7eb';                   // neutral
-                    return 'rgba(239, 68, 68, 0.5)';                      // red
-                },
-
-                async runAllAnalysis() {
-                    this.isRunning = true;
-                    this.results.forEach(r => { if (r.answer_count > 0) r.status = 'running'; });
-
-                    try {
-                        const response = await fetch('/analysis/api/run-all/', {
-                            method: 'POST',
-                            headers: {
-                                'X-CSRFToken': this.getCsrfToken(),
-                                'Content-Type': 'application/json'
-                            }
-                        });
-
-                        if (response.ok) {
-                            await this.loadResults();
-                        } else {
-                            const data = await response.json();
-                            alert('Analysis failed: ' + (data.error || 'Unknown error'));
-                        }
-                    } catch (error) {
-                        alert('Network error: ' + error.message);
-                    } finally {
-                        this.isRunning = false;
-                    }
-                },
-
-                getCsrfToken() {
-                    const name = 'csrftoken';
-                    let cookieValue = null;
-                    if (document.cookie && document.cookie !== '') {
-                        const cookies = document.cookie.split(';');
-                        for (let i = 0; i < cookies.length; i++) {
-                            const cookie = cookies[i].trim();
-                            if (cookie.substring(0, name.length + 1) === (name + '=')) {
-                                cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
-                                break;
+                            },
+                            scales: {
+                                x: {
+                                    min: -axisLimit,
+                                    max: axisLimit,
+                                    grid: { color: '#f3f4f6' },
+                                    ticks: {
+                                        callback: (v) => v.toFixed(1)
+                                    }
+                                },
+                                y: {
+                                    grid: { display: false },
+                                    ticks: { font: { size: 11 }, color: '#374151' }
+                                }
                             }
                         }
-                    }
-                    return cookieValue;
+                    });
                 }
             };
         }

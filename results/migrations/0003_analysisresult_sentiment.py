@@ -6,7 +6,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('analysis', '0002_remove_clustering_fields'),
+        ('results', '0002_remove_clustering_fields'),
     ]
 
     operations = [

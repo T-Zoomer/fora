@@ -1,124 +1,73 @@
 from django.http import JsonResponse
 from django.shortcuts import render
-from django.views.decorators.http import require_http_methods
 
-from questions.models import Question, Answer
-from .models import AnalysisResult
-from .services import run_thematic_coding, run_sentiment_analysis
+from .services import (
+    get_questions_with_results,
+    get_sentiment_correlation,
+    get_theme_correlation,
+)
 
 
 def dashboard_view(request):
     """Main analysis dashboard."""
-    questions = Question.objects.all()
-    total_answers = Answer.objects.count()
-    analyzed_count = AnalysisResult.objects.filter(status='completed').count()
-
-    # Check if any analysis is running
-    is_running = AnalysisResult.objects.filter(status='running').exists()
-
-    return render(request, 'analysis/dashboard.html', {
-        'questions_count': questions.count(),
-        'total_answers': total_answers,
-        'analyzed_count': analyzed_count,
-        'is_running': is_running,
-    })
+    return render(request, 'analysis/dashboard.html')
 
 
-@require_http_methods(["POST"])
-def run_all_analysis_api(request):
-    """Trigger analysis for all questions."""
-    questions = Question.objects.all()
+def questions_api(request):
+    """Returns available questions with their analysis capabilities."""
+    questions = get_questions_with_results()
+    return JsonResponse({'questions': questions})
 
-    results = []
-    for question in questions:
-        # Skip questions with no answers
-        answer_count = Answer.objects.filter(question=question).count()
-        if answer_count == 0:
-            continue
 
-        # Get or create analysis result
-        analysis, _ = AnalysisResult.objects.get_or_create(question=question)
+def correlation_api(request):
+    """
+    Returns correlation data.
 
-        # Update status to running
-        analysis.status = 'running'
-        analysis.save()
+    Query params:
+        target: target question ID
+        sources: comma-separated source question IDs (optional, defaults to all others)
+        target_theme: theme name to explain (required if target has no sentiment)
+    """
+    target_id = request.GET.get('target')
+    sources = request.GET.get('sources', '')
+    target_theme = request.GET.get('target_theme', '')
 
+    if not target_id:
+        return JsonResponse({'error': 'target parameter required'}, status=400)
+
+    try:
+        target_id = int(target_id)
+    except ValueError:
+        return JsonResponse({'error': 'invalid target parameter'}, status=400)
+
+    # Parse source IDs
+    questions = get_questions_with_results()
+    all_question_ids = [q['id'] for q in questions]
+
+    if sources:
         try:
-            # Run thematic coding
-            themes = run_thematic_coding(question)
+            source_ids = [int(s) for s in sources.split(',')]
+        except ValueError:
+            return JsonResponse({'error': 'invalid sources parameter'}, status=400)
+    else:
+        source_ids = [q_id for q_id in all_question_ids if q_id != target_id]
 
-            # Run sentiment analysis (if enabled for this question)
-            sentiment = {}
-            if question.analyze_sentiment:
-                sentiment = run_sentiment_analysis(question)
+    # Determine analysis type based on target question
+    target_question = next((q for q in questions if q['id'] == target_id), None)
+    if not target_question:
+        return JsonResponse({'error': 'target question not found'}, status=404)
 
-            # Save results
-            analysis.themes = themes
-            analysis.sentiment = sentiment
-            analysis.answer_count = answer_count
-            analysis.status = 'completed'
-            analysis.save()
+    if target_question['has_sentiment']:
+        # Sentiment correlation
+        data = get_sentiment_correlation(target_id, source_ids)
+    elif target_theme:
+        # Theme correlation
+        data = get_theme_correlation(target_id, target_theme, source_ids)
+    else:
+        return JsonResponse({
+            'error': 'target_theme required for questions without sentiment',
+            'available_themes': target_question['themes']
+        }, status=400)
 
-            results.append({
-                'question_id': question.id,
-                'status': 'completed',
-                'themes_count': len(themes),
-                'sentiment_avg': sentiment.get('average'),
-            })
-        except Exception as e:
-            analysis.status = 'failed'
-            analysis.save()
-            results.append({
-                'question_id': question.id,
-                'status': 'failed',
-                'error': str(e),
-            })
-
-    return JsonResponse({
-        'success': True,
-        'results': results,
-    })
-
-
-@require_http_methods(["GET"])
-def get_all_results_api(request):
-    """Get analysis results for all questions."""
-    questions = Question.objects.all().order_by('order')
-
-    all_results = []
-    for question in questions:
-        analysis = AnalysisResult.objects.filter(question=question).first()
-        answers = {str(a.id): a.text for a in Answer.objects.filter(question=question)}
-
-        if not analysis or analysis.status != 'completed':
-            all_results.append({
-                'question_id': question.id,
-                'question_text': question.text,
-                'status': analysis.status if analysis else 'not_analyzed',
-                'answer_count': len(answers),
-                'themes': [],
-            })
-            continue
-
-        # Enrich themes with answer texts
-        themes_with_texts = []
-        for theme in analysis.themes:
-            theme_copy = theme.copy()
-            theme_copy['answers'] = [
-                {'id': aid, 'text': answers.get(str(aid), '')}
-                for aid in theme.get('answer_ids', [])
-            ]
-            theme_copy['count'] = len(theme_copy['answers'])
-            themes_with_texts.append(theme_copy)
-
-        all_results.append({
-            'question_id': question.id,
-            'question_text': question.text,
-            'status': analysis.status,
-            'analyzed_at': analysis.analyzed_at.isoformat() if analysis.analyzed_at else None,
-            'answer_count': analysis.answer_count,
-            'themes': themes_with_texts,
-            'sentiment': analysis.sentiment,
-        })
-
-    return JsonResponse({'results': all_results})
+    data['target_question'] = target_question['text']
+    return JsonResponse(data)

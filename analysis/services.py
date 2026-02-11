@@ -1,118 +1,235 @@
-import json
+from collections import defaultdict
+from math import sqrt
 
-from django.conf import settings
-from openai import OpenAI
-
-from questions.models import Answer
+from questions.models import Answer, Question
+from results.models import Result
 
 
-def run_thematic_coding(question):
+def get_questions_with_results():
+    """Get all questions that have analysis results."""
+    results = Result.objects.filter(status='completed').select_related('question')
+    questions = []
+    for r in results:
+        has_sentiment = bool(r.sentiment and r.sentiment.get('answers'))
+        has_themes = bool(r.themes and len(r.themes) > 0)
+        questions.append({
+            'id': r.question.id,
+            'text': r.question.text,
+            'has_sentiment': has_sentiment,
+            'has_themes': has_themes,
+            'themes': [t['name'] for t in (r.themes or [])]
+        })
+    return questions
+
+
+def get_respondent_sentiments(question_id):
+    """Get respondent -> sentiment score mapping for a question."""
+    result = Result.objects.filter(question_id=question_id, status='completed').first()
+    if not result or not result.sentiment:
+        return {}
+
+    respondent_sentiments = {}
+    for item in result.sentiment.get('answers', []):
+        answer = Answer.objects.filter(id=item['id'], respondent__isnull=False).first()
+        if answer:
+            respondent_sentiments[answer.respondent_id] = item['score']
+    return respondent_sentiments
+
+
+def get_respondent_themes(question_id):
+    """Get theme -> set of respondent IDs mapping for a question."""
+    result = Result.objects.filter(question_id=question_id, status='completed').first()
+    if not result or not result.themes:
+        return {}, None
+
+    theme_respondents = defaultdict(set)
+    for theme in result.themes:
+        theme_name = theme.get('name', 'Unknown')
+        answer_ids = theme.get('answer_ids', [])
+        answers = Answer.objects.filter(id__in=answer_ids, respondent__isnull=False)
+        for answer in answers:
+            theme_respondents[theme_name].add(answer.respondent_id)
+
+    return dict(theme_respondents), result.question.text
+
+
+def get_sentiment_correlation(target_question_id, source_question_ids):
     """
-    Analyze answers using GPT-4o to identify themes/codes.
-    Returns a list of themes with their descriptions and associated answer IDs.
+    Calculate point-biserial correlation between theme presence and sentiment score.
+
+    Args:
+        target_question_id: Question with sentiment scores
+        source_question_ids: Questions to get themes from
+
+    Returns correlation data.
     """
-    answers = list(Answer.objects.filter(question=question).values('id', 'text'))
+    # Get sentiment scores for target question
+    respondent_sentiments = get_respondent_sentiments(target_question_id)
 
-    if not answers:
-        return []
+    if len(respondent_sentiments) < 3:
+        return {'themes': [], 'respondent_count': len(respondent_sentiments)}
 
-    client = OpenAI(api_key=settings.OPENAI_API_KEY)
+    # Get themes from source questions
+    all_theme_respondents = {}
+    theme_sources = {}
 
-    # Build the prompt with all answers
-    answers_text = "\n".join([f"[ID: {a['id']}] {a['text']}" for a in answers])
+    for q_id in source_question_ids:
+        if q_id == target_question_id:
+            continue
+        theme_respondents, q_text = get_respondent_themes(q_id)
+        for theme_name, respondents in theme_respondents.items():
+            # Filter to only respondents we have sentiment for
+            valid_respondents = respondents & set(respondent_sentiments.keys())
+            if valid_respondents:
+                key = f"{theme_name}"
+                if key in all_theme_respondents:
+                    all_theme_respondents[key] |= valid_respondents
+                else:
+                    all_theme_respondents[key] = valid_respondents
+                    theme_sources[key] = q_text[:40] if q_text else ''
 
-    response = client.chat.completions.create(
-        model="gpt-4o",
-        messages=[
-            {
-                "role": "system",
-                "content": """You are an expert qualitative researcher skilled in thematic coding.
-Analyze the provided survey answers and identify the main themes/codes present.
-For each theme, provide:
-1. A short name (2-5 words)
-2. A description (1-2 sentences)
-3. The IDs of answers that belong to this theme
+    # Calculate stats
+    all_respondent_ids = set(respondent_sentiments.keys())
+    all_sentiments = list(respondent_sentiments.values())
+    n = len(all_sentiments)
 
-An answer can belong to multiple themes. Be thorough but don't create redundant themes.
+    mean_all = sum(all_sentiments) / n
+    variance = sum((s - mean_all) ** 2 for s in all_sentiments) / n
+    std_all = sqrt(variance) if variance > 0 else 0
 
-Respond in JSON format:
-{
-  "themes": [
-    {
-      "name": "Theme Name",
-      "description": "Description of what this theme represents",
-      "answer_ids": [1, 2, 3]
-    }
-  ]
-}"""
-            },
-            {
-                "role": "user",
-                "content": f"Analyze these survey answers and identify themes:\n\n{answers_text}"
-            }
-        ],
-        response_format={"type": "json_object"}
-    )
+    results = []
 
-    result = json.loads(response.choices[0].message.content)
-    return result.get("themes", [])
+    for theme_name, respondents_with_theme in all_theme_respondents.items():
+        n1 = len(respondents_with_theme)
+        n0 = n - n1
 
+        if n1 < 2 or n0 < 2:
+            continue
 
-def run_sentiment_analysis(question):
-    """
-    Analyze the sentiment of each answer using GPT-4o.
-    Returns a dict with average score and per-answer scores.
-    Scores range from 0.0 (very negative) to 1.0 (very positive).
-    """
-    answers = list(Answer.objects.filter(question=question).values('id', 'text'))
+        sentiments_with = [respondent_sentiments[r] for r in respondents_with_theme]
+        mean_with = sum(sentiments_with) / n1
 
-    if not answers:
-        return {"average": None, "answers": []}
+        respondents_without = all_respondent_ids - respondents_with_theme
+        sentiments_without = [respondent_sentiments[r] for r in respondents_without]
+        mean_without = sum(sentiments_without) / n0
 
-    client = OpenAI(api_key=settings.OPENAI_API_KEY)
+        if std_all > 0:
+            r_pb = ((mean_with - mean_without) / std_all) * sqrt((n1 * n0) / (n * n))
+        else:
+            r_pb = 0
 
-    answers_text = "\n".join([f"[ID: {a['id']}] {a['text']}" for a in answers])
+        results.append({
+            'name': theme_name,
+            'correlation': round(r_pb, 3),
+            'mean_with': round(mean_with, 2),
+            'mean_without': round(mean_without, 2),
+            'count': n1,
+            'source': theme_sources.get(theme_name, '')
+        })
 
-    response = client.chat.completions.create(
-        model="gpt-4o",
-        messages=[
-            {
-                "role": "system",
-                "content": """You are an expert at sentiment analysis.
-Score each answer from 0.0 to 1.0 based on emotional tone:
-- 0.0 = very negative
-- 0.5 = neutral
-- 1.0 = very positive
-
-Respond in JSON format:
-{
-  "answers": [
-    {"id": 1, "score": 0.8},
-    {"id": 2, "score": 0.3}
-  ]
-}
-
-Include every answer ID provided. Be consistent in your scoring."""
-            },
-            {
-                "role": "user",
-                "content": f"Score the sentiment of these survey answers:\n\n{answers_text}"
-            }
-        ],
-        response_format={"type": "json_object"}
-    )
-
-    result = json.loads(response.choices[0].message.content)
-    answer_scores = result.get("answers", [])
-
-    # Calculate average
-    if answer_scores:
-        avg = sum(a["score"] for a in answer_scores) / len(answer_scores)
-        avg = round(avg, 2)
-    else:
-        avg = None
+    results.sort(key=lambda x: abs(x['correlation']), reverse=True)
 
     return {
-        "average": avg,
-        "answers": answer_scores
+        'themes': results,
+        'respondent_count': n,
+        'analysis_type': 'sentiment'
+    }
+
+
+def get_theme_correlation(target_question_id, target_theme, source_question_ids):
+    """
+    Calculate phi coefficient between theme presence in source and target theme presence.
+
+    Args:
+        target_question_id: Question containing the target theme
+        target_theme: Theme name to explain
+        source_question_ids: Questions to get source themes from
+
+    Returns correlation data.
+    """
+    # Get respondents who have the target theme
+    target_theme_respondents, _ = get_respondent_themes(target_question_id)
+
+    if target_theme not in target_theme_respondents:
+        return {'themes': [], 'respondent_count': 0, 'target_theme': target_theme}
+
+    target_respondents = target_theme_respondents[target_theme]
+
+    # Get all respondents who answered the target question (union of all theme respondents)
+    all_target_respondents = set()
+    for respondents in target_theme_respondents.values():
+        all_target_respondents |= respondents
+
+    if len(all_target_respondents) < 3:
+        return {'themes': [], 'respondent_count': len(all_target_respondents), 'target_theme': target_theme}
+
+    # Get themes from source questions
+    all_theme_respondents = {}
+    theme_sources = {}
+
+    for q_id in source_question_ids:
+        if q_id == target_question_id:
+            continue
+        theme_respondents, q_text = get_respondent_themes(q_id)
+        for theme_name, respondents in theme_respondents.items():
+            valid_respondents = respondents & all_target_respondents
+            if valid_respondents:
+                key = f"{theme_name}"
+                if key in all_theme_respondents:
+                    all_theme_respondents[key] |= valid_respondents
+                else:
+                    all_theme_respondents[key] = valid_respondents
+                    theme_sources[key] = q_text[:40] if q_text else ''
+
+    n = len(all_target_respondents)
+    results = []
+
+    for theme_name, source_respondents in all_theme_respondents.items():
+        # Build 2x2 contingency table
+        # n11 = has source theme AND has target theme
+        # n10 = has source theme AND NOT target theme
+        # n01 = NOT source theme AND has target theme
+        # n00 = NOT source theme AND NOT target theme
+
+        n11 = len(source_respondents & target_respondents)
+        n10 = len(source_respondents - target_respondents)
+        n01 = len(target_respondents - source_respondents)
+        n00 = len(all_target_respondents - source_respondents - target_respondents)
+
+        # Row and column totals
+        n1_dot = n11 + n10  # has source theme
+        n0_dot = n01 + n00  # no source theme
+        n_dot1 = n11 + n01  # has target theme
+        n_dot0 = n10 + n00  # no target theme
+
+        # Phi coefficient
+        denom = sqrt(n1_dot * n0_dot * n_dot1 * n_dot0)
+        if denom > 0:
+            phi = (n11 * n00 - n10 * n01) / denom
+        else:
+            phi = 0
+
+        # Calculate lift for interpretability
+        p_target = n_dot1 / n if n > 0 else 0
+        p_target_given_source = n11 / n1_dot if n1_dot > 0 else 0
+        lift = p_target_given_source / p_target if p_target > 0 else 1
+
+        if n1_dot >= 2:
+            results.append({
+                'name': theme_name,
+                'correlation': round(phi, 3),
+                'lift': round(lift, 2),
+                'co_occurrence': n11,
+                'count': n1_dot,
+                'source': theme_sources.get(theme_name, '')
+            })
+
+    results.sort(key=lambda x: abs(x['correlation']), reverse=True)
+
+    return {
+        'themes': results,
+        'respondent_count': n,
+        'target_theme': target_theme,
+        'target_theme_count': len(target_respondents),
+        'analysis_type': 'theme'
     }
