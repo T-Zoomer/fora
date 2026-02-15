@@ -168,28 +168,32 @@ Write in a neutral, professional tone. Do not use bullet points."""
 
 def chat_with_all_answers(user_message, chat_history=None):
     """
-    Chat about all interview answers using GPT-4o.
-    The AI has access to all interviews and their answers.
+    Chat about all interview answers using GPT-4o with tool calling.
+    The AI has access to all interviews, their answers, and analysis tools.
     """
     from questions.models import Interview
+    from results.tools import CHAT_TOOLS, execute_tool
 
     interviews = Interview.objects.all().order_by('order')
 
     # Build context with all interviews and answers
     context_parts = []
+    topic_list = []
     total_answers = 0
 
     for interview in interviews:
         answers = list(Answer.objects.filter(interview=interview).values('text'))
         if answers:
             answers_text = "\n".join([f"  - {a['text']}" for a in answers])
-            context_parts.append(f"**{interview.text}** ({len(answers)} responses):\n{answers_text}")
+            context_parts.append(f"**{interview.text}** (ID: {interview.id}, {len(answers)} responses):\n{answers_text}")
+            topic_list.append(f"- ID {interview.id}: {interview.text}")
             total_answers += len(answers)
 
     if total_answers == 0:
         return "There are no interview responses yet."
 
     full_context = "\n\n".join(context_parts)
+    topics_reference = "\n".join(topic_list)
 
     client = OpenAI(api_key=settings.OPENAI_API_KEY)
 
@@ -198,16 +202,20 @@ def chat_with_all_answers(user_message, chat_history=None):
             "role": "system",
             "content": f"""You are a helpful assistant that analyzes survey responses about workplace productivity and wellbeing.
 
+AVAILABLE INTERVIEW TOPICS:
+{topics_reference}
+
 Here is the complete survey data:
 
 {full_context}
 
-Based on this data, answer the user's questions. You can:
-- Summarize findings across all questions
-- Identify patterns and correlations
-- Provide specific examples from responses
-- Suggest actionable insights for improving productivity
-- Compare responses across different questions
+You have access to analysis tools that can compute statistics and correlations. Use these tools when the user asks about:
+- Sentiment scores, averages, or comparisons between topics
+- Theme analysis or what themes are present
+- Correlations between topics or between themes and sentiment
+- What factors are driving positive or negative sentiment
+
+When using tools, always use the topic IDs listed above. After receiving tool results, synthesize the data into a clear, helpful response.
 
 Be specific and reference actual responses when relevant. Be concise but comprehensive."""
         }
@@ -219,10 +227,45 @@ Be specific and reference actual responses when relevant. Be concise but compreh
 
     messages.append({"role": "user", "content": user_message})
 
-    response = client.chat.completions.create(
+    # Tool calling loop (max 5 iterations)
+    max_iterations = 5
+    for _ in range(max_iterations):
+        response = client.chat.completions.create(
+            model="gpt-4o",
+            messages=messages,
+            tools=CHAT_TOOLS,
+            max_tokens=1000
+        )
+
+        response_message = response.choices[0].message
+
+        # If no tool calls, return the final response
+        if not response_message.tool_calls:
+            return response_message.content
+
+        # Add assistant message with tool calls
+        messages.append(response_message)
+
+        # Execute each tool call and add results
+        for tool_call in response_message.tool_calls:
+            tool_name = tool_call.function.name
+            tool_args = tool_call.function.arguments
+
+            # Execute the tool
+            tool_result = execute_tool(tool_name, tool_args)
+
+            # Add tool result to messages
+            messages.append({
+                "role": "tool",
+                "tool_call_id": tool_call.id,
+                "content": tool_result
+            })
+
+    # If we hit max iterations, get a final response without tools
+    final_response = client.chat.completions.create(
         model="gpt-4o",
         messages=messages,
         max_tokens=1000
     )
 
-    return response.choices[0].message.content
+    return final_response.choices[0].message.content
