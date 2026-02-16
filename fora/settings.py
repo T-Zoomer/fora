@@ -10,16 +10,10 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/5.2/ref/settings/
 """
 
-import os
 from pathlib import Path
-
-from dotenv import load_dotenv
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
-
-# Load environment variables from .env file
-load_dotenv(BASE_DIR / '.env')
 
 
 # Quick-start development settings - unsuitable for production
@@ -130,4 +124,4 @@ STATIC_URL = 'static/'
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 # OpenAI API Key for voice mode (TTS and transcription)
-OPENAI_API_KEY = os.environ.get('OPENAI_API_KEY', '')
+OPENAI_API_KEY = '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'
