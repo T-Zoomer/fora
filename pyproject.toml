@@ -10,4 +10,5 @@ dependencies = [
     "python-dotenv>=1.0.0",
     "requests>=2.31.0",
     "gunicorn>=22.0.0",
+    "whitenoise>=6.5.0",
 ]

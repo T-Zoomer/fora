@@ -63,3 +63,5 @@ typing-inspection==0.4.2
     # via pydantic
 urllib3==2.6.3
     # via requests
+whitenoise==6.11.0
+    # via fora (pyproject.toml)
