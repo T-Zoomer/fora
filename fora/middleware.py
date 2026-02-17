@@ -1,5 +1,5 @@
 from django.conf import settings
-from django.http import HttpResponse
+from django.http import HttpResponse, HttpResponseRedirect
 
 
 class SharedPasswordMiddleware:
@@ -17,7 +17,7 @@ class SharedPasswordMiddleware:
         if request.method == "POST" and request.path == "/login/":
             if request.POST.get("password") == self.password:
                 request.session["authenticated"] = True
-                return self.get_response(request)
+                return HttpResponseRedirect("/")
             return self._login_page(error="Wrong password")
 
         return self._login_page()
