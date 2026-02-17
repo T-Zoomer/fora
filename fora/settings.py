@@ -28,7 +28,7 @@ DEBUG = True
 
 ALLOWED_HOSTS = ["*"]
 
-CSRF_TRUSTED_ORIGINS = [os.environ.get("RAILWAY_PUBLIC_DOMAIN", "http://localhost")]
+CSRF_TRUSTED_ORIGINS = ["https://fora-production.up.railway.app"]
 
 
 # Application definition
