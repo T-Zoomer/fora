@@ -124,4 +124,4 @@ STATIC_URL = 'static/'
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 # OpenAI API Key for voice mode (TTS and transcription)
-OPENAI_API_KEY = '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'
+OPENAI_API_KEY = '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'
