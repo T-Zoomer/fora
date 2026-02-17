@@ -14,7 +14,7 @@ class SharedPasswordMiddleware:
         if request.session.get("authenticated"):
             return self.get_response(request)
 
-        if request.method == "POST" and request.POST.get("password"):
+        if request.method == "POST" and request.path == "/login/":
             if request.POST.get("password") == self.password:
                 request.session["authenticated"] = True
                 return self.get_response(request)
@@ -32,8 +32,7 @@ input[type=password] {{ display: block; width: 100%; padding: 0.5rem; margin: 0.
 button {{ padding: 0.5rem 1.5rem; background: #333; color: white; border: none; border-radius: 4px; cursor: pointer; }}
 .error {{ color: red; font-size: 0.9rem; }}
 </style></head>
-<body><form method="post" action="/">
-<input type="hidden" name="csrfmiddlewaretoken" value="unused">
+<body><form method="post" action="/login/">
 <h2>Password</h2>
 {'<p class="error">' + error + '</p>' if error else ''}
 <input type="password" name="password" autofocus>
