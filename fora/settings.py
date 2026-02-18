@@ -12,6 +12,9 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 
 import os
 from pathlib import Path
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -131,5 +134,4 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 SITE_PASSWORD = "Turbo-mixtape-243"
 
-# OpenAI API Key for voice mode (TTS and transcription)
-OPENAI_API_KEY = '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'
+OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
