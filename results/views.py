@@ -10,19 +10,68 @@ import json
 
 def dashboard_view(request):
     """Main results dashboard."""
+    # Clear any results stuck in 'running' from a previous server session
+    Result.objects.filter(status='running').update(status='failed')
+
     interviews = Interview.objects.all()
     total_answers = Answer.objects.count()
     analyzed_count = Result.objects.filter(status='completed').count()
-
-    # Check if processing is running
-    is_running = Result.objects.filter(status='running').exists()
 
     return render(request, 'results/dashboard.html', {
         'interviews_count': interviews.count(),
         'total_answers': total_answers,
         'analyzed_count': analyzed_count,
-        'is_running': is_running,
     })
+
+
+@require_http_methods(["POST"])
+def run_single_api(request, interview_id):
+    """Trigger processing for a single interview."""
+    try:
+        interview = Interview.objects.get(id=interview_id)
+    except Interview.DoesNotExist:
+        return JsonResponse({'error': 'Interview not found'}, status=404)
+
+    answer_count = Answer.objects.filter(interview=interview).count()
+    if answer_count == 0:
+        return JsonResponse({'error': 'No answers to analyze'}, status=400)
+
+    result, _ = Result.objects.get_or_create(interview=interview)
+    result.status = 'running'
+    result.save()
+
+    try:
+        themes = run_thematic_coding(interview)
+        sentiment = {}
+        if interview.analyze_sentiment:
+            sentiment = run_sentiment_analysis(interview)
+        summary = generate_summary(interview)
+
+        result.themes = themes
+        result.sentiment = sentiment
+        result.summary = summary
+        result.answer_count = answer_count
+        result.status = 'completed'
+        result.save()
+
+        return JsonResponse({
+            'success': True,
+            'interview_id': interview.id,
+            'status': 'completed',
+            'themes_count': len(themes),
+        })
+    except Exception as e:
+        import traceback
+        print(f"[error] interview {interview.id}: {e}")
+        traceback.print_exc()
+        result.status = 'failed'
+        result.save()
+        return JsonResponse({
+            'success': False,
+            'interview_id': interview.id,
+            'status': 'failed',
+            'error': str(e),
+        }, status=500)
 
 
 @require_http_methods(["POST"])
@@ -71,6 +120,9 @@ def run_all_api(request):
                 'sentiment_avg': sentiment.get('average'),
             })
         except Exception as e:
+            import traceback
+            print(f"[error] interview {interview.id}: {e}")
+            traceback.print_exc()
             result.status = 'failed'
             result.save()
             results.append({
@@ -105,15 +157,20 @@ def get_all_results_api(request):
             })
             continue
 
-        # Enrich themes with answer texts
+        # Enrich themes with answer texts and excerpts
         themes_with_texts = []
         for theme in result.themes:
             theme_copy = theme.copy()
-            theme_copy['answers'] = [
-                {'id': aid, 'text': answers.get(str(aid), '')}
+            all_answers = [
+                {
+                    'id': aid,
+                    'text': answers.get(str(aid), ''),
+                    'excerpt': theme.get('excerpts', {}).get(str(aid), ''),
+                }
                 for aid in theme.get('answer_ids', [])
             ]
-            theme_copy['count'] = len(theme_copy['answers'])
+            theme_copy['count'] = len(all_answers)
+            theme_copy['answers'] = all_answers[:8]
             themes_with_texts.append(theme_copy)
 
         all_results.append({
