@@ -11,6 +11,7 @@ class Result(models.Model):
 
     # Thematic coding results
     themes = models.JSONField(default=list)  # [{name, description, answer_ids}, ...]
+    proposed_themes = models.JSONField(default=list)  # [{name, description}] user-editable, from Pass 1
 
     # Sentiment results
     sentiment = models.JSONField(default=dict)  # {average: 0.65, answers: [{id, score}, ...]}
@@ -18,7 +19,7 @@ class Result(models.Model):
     # Metadata
     analyzed_at = models.DateTimeField(auto_now=True)
     answer_count = models.IntegerField(default=0)
-    status = models.CharField(max_length=20, default='pending')  # pending, running, completed, failed
+    status = models.CharField(max_length=20, default='pending')  # pending, discovering, editing, classifying, completed, failed
 
     class Meta:
         db_table = 'analysis_analysisresult'

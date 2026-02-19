@@ -1,0 +1,26 @@
+<style>
+    .quote-wall { columns: 3; column-gap: 0.75rem; }
+    .quote-card { break-inside: avoid; margin-bottom: 0.75rem; }
+</style>
+<div class="h-full overflow-y-auto scrollbar-thin pr-2">
+    <div class="quote-wall">
+        <template x-for="answer in allAnswers" :key="answer.id">
+            <div class="quote-card">
+                <div
+                    x-data="{ expanded: false }"
+                    class="bg-gray-100 rounded p-2.5 cursor-pointer"
+                    @click="expanded = !expanded"
+                >
+                    <p
+                        class="text-xs text-gray-600 leading-relaxed"
+                        :class="expanded ? '' : 'line-clamp-4'"
+                        x-text="answer.text"
+                    ></p>
+                </div>
+            </div>
+        </template>
+        <div x-show="allAnswers.length === 0" class="col-span-3 text-center text-gray-400 text-sm py-8">
+            Loading answers...
+        </div>
+    </div>
+</div>

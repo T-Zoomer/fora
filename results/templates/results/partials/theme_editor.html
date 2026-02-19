@@ -1,0 +1,80 @@
+<div class="h-full flex flex-col">
+    <!-- Header -->
+    <div class="flex items-center justify-between mb-3 flex-shrink-0">
+        <h3 class="text-xs font-medium text-gray-500 uppercase tracking-wide">Themes</h3>
+        <button
+            @click="rediscoverThemes(selectedIndex)"
+            :disabled="!!discoveringIds[results[selectedIndex]?.interview_id]"
+            class="text-xs text-gray-400 hover:text-gray-600 transition-colors disabled:opacity-40"
+            title="Re-discover with AI (overwrites your edits)"
+        >
+            <span x-show="!discoveringIds[results[selectedIndex]?.interview_id]">↺ Re-discover with AI</span>
+            <span x-show="!!discoveringIds[results[selectedIndex]?.interview_id]">Discovering...</span>
+        </button>
+    </div>
+
+    <!-- Theme Cards -->
+    <div class="flex-1 overflow-y-auto scrollbar-thin space-y-2 pr-1">
+        <template x-for="(theme, i) in proposedThemes" :key="i">
+            <div class="border border-gray-200 rounded-lg p-3 bg-white group relative">
+                <!-- Checkbox + delete row -->
+                <div class="flex items-start gap-2 mb-1">
+                    <input
+                        type="checkbox"
+                        class="mt-0.5 flex-shrink-0 cursor-pointer accent-gray-700"
+                        :checked="mergeSelected[i]"
+                        @change="mergeSelected = { ...mergeSelected, [i]: $event.target.checked }"
+                    >
+                    <div
+                        class="flex-1 text-sm font-medium text-gray-900 focus:outline-none focus:ring-0 min-h-[1.25rem]"
+                        contenteditable="true"
+                        x-text="theme.name"
+                        @blur="updateThemeName(i, $event.target.innerText)"
+                        @keydown.enter.prevent="$event.target.blur()"
+                    ></div>
+                    <button
+                        @click="deleteTheme(i)"
+                        class="text-gray-300 hover:text-red-400 transition-colors flex-shrink-0 text-base leading-none"
+                        title="Delete theme"
+                    >×</button>
+                </div>
+                <div
+                    class="text-xs text-gray-500 focus:outline-none focus:ring-0 min-h-[1rem] pl-5"
+                    contenteditable="true"
+                    x-text="theme.description"
+                    @blur="updateThemeDesc(i, $event.target.innerText)"
+                ></div>
+            </div>
+        </template>
+
+        <!-- Add theme row -->
+        <button
+            @click="addTheme()"
+            class="w-full text-left text-xs text-gray-400 hover:text-gray-600 py-2 px-3 border border-dashed border-gray-200 rounded-lg hover:border-gray-300 transition-colors"
+        >
+            + Add theme
+        </button>
+    </div>
+
+    <!-- Footer actions -->
+    <div class="flex-shrink-0 mt-3 space-y-2">
+        <!-- Merge button (visible when 2+ selected) -->
+        <div x-show="mergeCount() >= 2">
+            <button
+                @click="mergeThemes()"
+                class="w-full text-sm py-1.5 px-3 border border-gray-300 rounded text-gray-600 hover:bg-gray-50 transition-colors"
+                x-text="'Merge selected (' + mergeCount() + ')'"
+            ></button>
+        </div>
+
+        <!-- Run Analysis button -->
+        <button
+            @click="runClassification(selectedIndex)"
+            :disabled="!!classifyingIds[results[selectedIndex]?.interview_id] || proposedThemes.length === 0"
+            class="w-full text-sm py-2 px-3 bg-gray-900 text-white rounded hover:bg-gray-800 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+        >
+            <span x-show="!classifyingIds[results[selectedIndex]?.interview_id]">Run Analysis</span>
+            <span x-show="!!classifyingIds[results[selectedIndex]?.interview_id]">Classifying...</span>
+        </button>
+    </div>
+</div>

@@ -11,12 +11,14 @@ BATCH_SIZE = 50
 MAX_THEMES = 12
 
 
-def _discover_themes(answers, question_text):
+def _discover_themes(answers, question_text, custom_prompt=None):
     """
     Pass 1: Send ALL answers to discover themes. No sampling.
     Returns list of theme dicts: [{name, description, answer_ids: [], excerpts: {}}]
     """
     answers_text = "\n".join([f"[ID: {a['id']}] {a['text']}" for a in answers])
+
+    custom_instructions = f"\nADDITIONAL INSTRUCTIONS FROM RESEARCHER:\n{custom_prompt.strip()}" if custom_prompt and custom_prompt.strip() else ""
 
     system_prompt = f"""You are an expert qualitative researcher skilled in thematic coding.
 Analyze the provided interview answers and identify the main themes present.
@@ -27,7 +29,7 @@ IMPORTANT GUIDELINES:
 - DO NOT create sentiment-based themes like "Positive feelings" or "Negative experiences" — sentiment is captured separately
 - Maximum {MAX_THEMES} themes — prioritise the most significant and frequently mentioned factors
 - Each theme must apply to at least 2 answers
-- Return only theme names and descriptions — no answer assignments needed at this stage
+- Return only theme names and descriptions — no answer assignments needed at this stage{custom_instructions}
 
 Respond in JSON format:
 {{
@@ -107,6 +109,65 @@ Use only theme numbers 1 to {len(themes)}."""
                     theme["excerpts"][str(answer_id)] = excerpt
 
 
+def discover_themes_only(interview, custom_prompt=None):
+    """
+    Pass 1 only: discover themes from all answers.
+    Returns [{name, description}] — no answer assignments.
+    """
+    answers = list(Answer.objects.filter(interview=interview).values('id', 'text'))
+    if not answers:
+        return []
+    print(f"\n[discover themes] '{interview.text}' — {len(answers)} answers")
+    themes = _discover_themes(answers, interview.text, custom_prompt=custom_prompt)
+    return [{"name": t["name"], "description": t["description"]} for t in themes]
+
+
+def run_classification_with_themes(interview, themes):
+    """
+    Pass 2 only: classify answers against the provided themes.
+    themes: [{name, description}] (user-edited list)
+    Returns full themes with answer_ids and excerpts, plus summary and sentiment dicts.
+    """
+    answers = list(Answer.objects.filter(interview=interview).values('id', 'text'))
+    if not answers or not themes:
+        return [], {}, ""
+
+    # Build theme dicts with empty answer_ids/excerpts for classification
+    full_themes = [
+        {"name": t["name"], "description": t["description"], "answer_ids": [], "excerpts": {}}
+        for t in themes
+    ]
+
+    total_batches = (len(answers) + BATCH_SIZE - 1) // BATCH_SIZE
+    print(f"\n[classify with themes] '{interview.text}' — {len(answers)} answers, {len(full_themes)} themes, {total_batches} batches")
+    _classify_answers(answers, full_themes)
+
+    # Filter themes with no answers and cap at MAX_THEMES
+    before = len(full_themes)
+    full_themes = [t for t in full_themes if len(t["answer_ids"]) >= 1]
+    full_themes = full_themes[:MAX_THEMES]
+    print(f"  [filter] kept {len(full_themes)}/{before} themes (≥1 answer, max {MAX_THEMES})")
+
+    # Collect all assigned answer IDs
+    assigned_ids = set()
+    for theme in full_themes:
+        assigned_ids.update(theme["answer_ids"])
+
+    # Put unassigned answers in an "Other" theme
+    unassigned = [a for a in answers if a['id'] not in assigned_ids]
+    if unassigned:
+        print(f"  [other] {len(unassigned)} answers unassigned → adding 'Other' theme")
+        full_themes.append({
+            "name": "Other",
+            "description": "Answers that did not clearly fit into any of the identified themes.",
+            "answer_ids": [a['id'] for a in unassigned],
+            "excerpts": {},
+        })
+
+    print(f"  [done] {len(full_themes)} final themes\n")
+    return full_themes
+
+
 def run_thematic_coding(interview):
     """
     Two-pass thematic coding:
@@ -132,11 +193,11 @@ def run_thematic_coding(interview):
     print(f"[pass 2] classifying {len(answers)} answers in {total_batches} batches of {BATCH_SIZE}...")
     _classify_answers(answers, themes)
 
-    # Filter themes with fewer than 2 answers and cap at MAX_THEMES
+    # Filter themes with no answers and cap at MAX_THEMES
     before = len(themes)
-    themes = [t for t in themes if len(t["answer_ids"]) >= 2]
+    themes = [t for t in themes if len(t["answer_ids"]) >= 1]
     themes = themes[:MAX_THEMES]
-    print(f"  [filter] kept {len(themes)}/{before} themes (≥2 answers, max {MAX_THEMES})")
+    print(f"  [filter] kept {len(themes)}/{before} themes (≥1 answer, max {MAX_THEMES})")
 
     # Collect all assigned answer IDs
     assigned_ids = set()
