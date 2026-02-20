@@ -1,7 +1,27 @@
+import uuid
+
 from django.db import models
 
 
+class Interview(models.Model):
+    uuid = models.UUIDField(default=uuid.uuid4, unique=True)
+    name = models.CharField(max_length=200)
+    intro_message = models.TextField(
+        blank=True,
+        default='',
+        help_text="Opening message shown to the respondent at the start of the interview.",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    is_open = models.BooleanField(default=True)
+
+    def __str__(self):
+        return self.name
+
+
 class Respondent(models.Model):
+    interview = models.ForeignKey(
+        Interview, on_delete=models.SET_NULL, null=True, related_name='respondents'
+    )
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
@@ -9,6 +29,7 @@ class Respondent(models.Model):
 
 
 class Topic(models.Model):
+    interview = models.ForeignKey(Interview, on_delete=models.CASCADE, related_name='topics')
     name = models.TextField()
     goal = models.TextField(
         blank=True,

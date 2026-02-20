@@ -1,10 +1,18 @@
 <header class="border-b border-gray-200 px-6 py-4">
     <div class="flex items-center justify-between">
         <h1 class="text-lg font-mono tracking-wide">PROOF OF CONCEPT</h1>
-        <span class="text-sm text-gray-900">AI-first Surveys</span>
+        {% if interviews|length > 1 %}
+        <select onchange="window.location = this.value" class="text-sm text-gray-600 bg-transparent border-none outline-none cursor-pointer hover:text-gray-900">
+            {% for iv in interviews %}
+            <option value="{% if '/results' in request.path %}/results/{{ iv.uuid }}/{% else %}/{{ iv.uuid }}/{% endif %}" {% if iv.uuid == interview.uuid %}selected{% endif %}>
+                {{ iv.name }}
+            </option>
+            {% endfor %}
+        </select>
+        {% endif %}
         <nav class="flex gap-6">
-            <a href="/" class="text-sm {% if request.path == '/' %}text-gray-900 font-medium{% else %}text-gray-600 hover:text-gray-900{% endif %}">Interview</a>
-            <a href="/results/" class="text-sm {% if '/results' in request.path %}text-gray-900 font-medium{% else %}text-gray-600 hover:text-gray-900{% endif %}">Results</a>
+            <a href="/{{ interview.uuid }}/" class="text-sm {% if not '/results' in request.path %}text-gray-900 font-medium{% else %}text-gray-600 hover:text-gray-900{% endif %}">Interview</a>
+            <a href="/results/{{ interview.uuid }}/" class="text-sm {% if '/results' in request.path %}text-gray-900 font-medium{% else %}text-gray-600 hover:text-gray-900{% endif %}">Results</a>
         </nav>
     </div>
 </header>

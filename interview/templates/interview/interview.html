@@ -31,11 +31,11 @@
     <div x-data="interviewApp()" x-init="init()" class="h-[calc(100vh-65px)] flex">
         <!-- Left Sidebar - Topics -->
         <div class="w-64 border-r border-gray-200 flex flex-col">
-            <div class="p-4 border-b border-gray-100">
+            <div class="px-4 pt-4 pb-2">
                 <h2 class="text-sm font-medium text-gray-900">Topics to cover</h2>
             </div>
 
-            <div class="flex-1 p-4 space-y-2 overflow-y-auto scrollbar-thin">
+            <div class="flex-1 px-4 pb-4 space-y-2 overflow-y-auto scrollbar-thin">
                 <template x-for="topic in topics" :key="topic.id">
                     <div
                         class="rounded-lg transition-colors"
@@ -112,7 +112,7 @@
                     <div class="bg-green-50 text-green-700 px-6 py-4 rounded-xl text-center">
                         <p class="font-medium">Interview complete!</p>
                         <p class="text-sm mt-1">Thank you for sharing. Your responses have been recorded.</p>
-                        <a href="/" class="inline-block mt-3 text-sm text-green-600 hover:text-green-800 hover:underline">
+                        <a :href="`/${INTERVIEW_ID}/`" class="inline-block mt-3 text-sm text-green-600 hover:text-green-800 hover:underline">
                             Start a new interview
                         </a>
                     </div>
@@ -146,29 +146,36 @@
 
     <script>
         const CSRF_TOKEN = '{{ csrf_token }}';
+        const INTERVIEW_ID = '{{ interview.uuid }}';
 
         function interviewApp() {
             return {
                 topics: [],
                 coveredTopics: [],
                 savedAnswers: {},
-                messages: [
-                    { role: 'assistant', content: 'Hi! I\'d like to check in with you about how work has been going. How did it go at work this month?' }
-                ],
+                messages: [],
                 input: '',
                 typing: false,
                 interviewComplete: false,
 
                 async init() {
-                    const response = await fetch('/api/interview/topics/');
-                    const data = await response.json();
+                    this.typing = true;
+
+                    const [topicsRes, openingRes] = await Promise.all([
+                        fetch(`/api/interview/${INTERVIEW_ID}/topics/`),
+                        fetch(`/api/interview/${INTERVIEW_ID}/opening/`),
+                    ]);
+                    const data = await topicsRes.json();
+                    const openingData = await openingRes.json();
+
                     this.topics = data.topics.map(t => ({ ...t, expanded: false }));
 
-                    // Use the first topic's question as the opening message
-                    if (this.topics.length > 0 && this.topics[0].question) {
-                        this.messages[0].content = this.topics[0].question;
-                    }
+                    const messages = [];
+                    if (data.intro_message) messages.push({ role: 'assistant', content: data.intro_message });
+                    if (openingData.question) messages.push({ role: 'assistant', content: openingData.question });
+                    this.messages = messages;
 
+                    this.typing = false;
                     this.$nextTick(() => this.$refs.input?.focus());
                 },
 
@@ -187,7 +194,7 @@
                     this.scrollToBottom();
 
                     try {
-                        const response = await fetch('/api/interview/chat/', {
+                        const response = await fetch(`/api/interview/${INTERVIEW_ID}/chat/`, {
                             method: 'POST',
                             headers: {
                                 'Content-Type': 'application/json',

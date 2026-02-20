@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tracking – {{ interview.name }}</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap');
+    </style>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: { sans: ['Inter', 'system-ui', 'sans-serif'] }
+                }
+            }
+        }
+    </script>
+</head>
+<body class="min-h-screen bg-white font-sans">
+    {% include "includes/header.html" %}
+
+    <script>
+        const INTERVIEW_ID = '{{ interview.uuid }}';
+        const CSRF_TOKEN = '{{ csrf_token }}';
+    </script>
+
+    <div
+        x-data="trackingApp()"
+        x-init="loadData()"
+        class="flex flex-col items-center px-6 py-16"
+    >
+        <div class="w-full max-w-2xl space-y-10">
+
+            <!-- Headline stat -->
+            <div class="text-center">
+                <p class="text-6xl font-bold text-gray-900" x-text="total !== null ? total : '—'"></p>
+                <p class="mt-2 text-lg text-gray-500">responses so far</p>
+            </div>
+
+            <!-- Bar chart -->
+            <div class="bg-gray-50 rounded-xl p-6">
+                <canvas id="responsesChart" height="160"></canvas>
+                <p x-show="byDay.length === 0 && loaded" class="text-center text-sm text-gray-400 mt-4">No responses yet.</p>
+            </div>
+
+            <!-- Close button -->
+            <div class="text-center">
+                <button
+                    @click="closeInterview()"
+                    :disabled="closing"
+                    class="px-8 py-3 bg-gray-900 text-white text-sm font-medium rounded-lg hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                >
+                    <span x-show="!closing">Close and analyse interviews</span>
+                    <span x-show="closing">Closing…</span>
+                </button>
+            </div>
+
+        </div>
+    </div>
+
+    <script>
+        function trackingApp() {
+            return {
+                total: null,
+                byDay: [],
+                loaded: false,
+                closing: false,
+                chart: null,
+
+                async loadData() {
+                    try {
+                        const res = await fetch(`/results/${INTERVIEW_ID}/api/respondents/`);
+                        const data = await res.json();
+                        this.total = data.total;
+                        this.byDay = data.by_day;
+                        this.loaded = true;
+                        this.$nextTick(() => this.renderChart());
+                    } catch (e) {
+                        console.error('Failed to load respondent data', e);
+                        this.loaded = true;
+                    }
+                },
+
+                renderChart() {
+                    if (this.byDay.length === 0) return;
+                    const ctx = document.getElementById('responsesChart').getContext('2d');
+                    if (this.chart) this.chart.destroy();
+                    this.chart = new Chart(ctx, {
+                        type: 'bar',
+                        data: {
+                            labels: this.byDay.map(d => d.date),
+                            datasets: [{
+                                data: this.byDay.map(d => d.count),
+                                backgroundColor: '#9ca3af',
+                                borderRadius: 4,
+                                borderSkipped: false,
+                            }],
+                        },
+                        options: {
+                            plugins: { legend: { display: false } },
+                            scales: {
+                                x: { grid: { display: false }, ticks: { color: '#6b7280', font: { size: 11 } } },
+                                y: { grid: { color: '#f3f4f6' }, ticks: { color: '#6b7280', font: { size: 11 }, stepSize: 1 }, beginAtZero: true },
+                            },
+                        },
+                    });
+                },
+
+                async closeInterview() {
+                    this.closing = true;
+                    try {
+                        await fetch(`/results/${INTERVIEW_ID}/api/close/`, {
+                            method: 'POST',
+                            headers: { 'X-CSRFToken': CSRF_TOKEN, 'Content-Type': 'application/json' },
+                        });
+                        window.location.reload();
+                    } catch (e) {
+                        console.error('Failed to close interview', e);
+                        this.closing = false;
+                    }
+                },
+            };
+        }
+    </script>
+</body>
+</html>

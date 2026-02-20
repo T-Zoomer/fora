@@ -2,29 +2,72 @@ import json
 import traceback
 
 from django.http import JsonResponse
-from django.shortcuts import render
+from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_http_methods
 
-from interview.models import Topic, Answer
+from django.db import models
+from django.db.models.functions import TruncDate
+
+from interview.models import Topic, Answer, Interview, Respondent
 from .models import Result
 from .services import run_sentiment_analysis, generate_summary, chat_with_all_answers, discover_themes_only, run_classification_with_themes
 
 
-def dashboard_view(request):
+def results_redirect_view(request):
+    interview = Interview.objects.order_by('created_at').first()
+    if interview is None:
+        from django.http import Http404
+        raise Http404
+    return redirect(f'/results/{interview.uuid}/')
+
+
+def dashboard_view(request, interview_id):
     """Main results dashboard."""
+    interview = get_object_or_404(Interview, uuid=interview_id)
+
+    if interview.is_open:
+        return render(request, 'results/tracking.html', {'interview': interview})
+
     # Clear any results stuck in transient statuses from a previous server session
     Result.objects.filter(status__in=['running', 'discovering', 'classifying']).update(status='failed')
     Result.objects.filter(status='editing').update(status='completed')
 
-    topics = Topic.objects.all()
-    total_answers = Answer.objects.count()
-    analyzed_count = Result.objects.filter(status='completed').count()
+    topics = Topic.objects.filter(interview=interview)
+    total_answers = Answer.objects.filter(topic__interview=interview).count()
+    analyzed_count = Result.objects.filter(topic__interview=interview, status='completed').count()
 
     return render(request, 'results/dashboard.html', {
+        'interview': interview,
+        'interview_id': interview_id,
         'topics_count': topics.count(),
         'total_answers': total_answers,
         'analyzed_count': analyzed_count,
     })
+
+
+@require_http_methods(["POST"])
+def close_interview_api(request, interview_id):
+    """Close an interview so it transitions to the analysis dashboard."""
+    interview = get_object_or_404(Interview, uuid=interview_id)
+    interview.is_open = False
+    interview.save(update_fields=['is_open'])
+    return JsonResponse({'success': True})
+
+
+@require_http_methods(["GET"])
+def respondents_api(request, interview_id):
+    """Return respondent count grouped by day."""
+    interview = get_object_or_404(Interview, uuid=interview_id)
+    qs = (
+        Respondent.objects.filter(interview=interview)
+        .annotate(date=TruncDate('created_at'))
+        .values('date')
+        .annotate(count=models.Count('id'))
+        .order_by('date')
+    )
+    total = Respondent.objects.filter(interview=interview).count()
+    by_day = [{'date': str(row['date']), 'count': row['count']} for row in qs]
+    return JsonResponse({'total': total, 'by_day': by_day})
 
 
 @require_http_methods(["POST"])
@@ -197,14 +240,11 @@ def classify_with_themes_api(request, topic_id):
 
 
 @require_http_methods(["GET"])
-def get_all_results_api(request):
+def get_all_results_api(request, interview_id):
     """Get results for all topics."""
-    topics = (
-        Topic.objects
-        .select_related('result')
-        .prefetch_related('answer_set')
-        .order_by('order')
-    )
+    interview = get_object_or_404(Interview, uuid=interview_id)
+    qs = Topic.objects.filter(interview=interview)
+    topics = qs.select_related('result').prefetch_related('answer_set').order_by('order')
 
     all_results = []
     for topic in topics:
@@ -254,7 +294,7 @@ def get_all_results_api(request):
 
 
 @require_http_methods(["POST"])
-def chat_api(request):
+def chat_api(request, interview_id):
     """Chat with all survey answers."""
     try:
         data = json.loads(request.body)
@@ -264,7 +304,8 @@ def chat_api(request):
         if not message:
             return JsonResponse({'error': 'message is required'}, status=400)
 
-        response_text = chat_with_all_answers(message, chat_history)
+        interview = get_object_or_404(Interview, uuid=interview_id)
+        response_text = chat_with_all_answers(message, chat_history, interview=interview)
 
         return JsonResponse({
             'success': True,

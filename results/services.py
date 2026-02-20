@@ -222,12 +222,15 @@ Write in a neutral, professional tone. Do not use bullet points."""
     return generate(system_prompt, f"Summarize these responses to the question \"{topic.name}\":\n\n{answers_text}")
 
 
-def chat_with_all_answers(user_message, chat_history=None):
+def chat_with_all_answers(user_message, chat_history=None, interview=None):
     """
     Chat about all interview answers using GPT-4o.
     The AI has access to all interviews and their answers as context.
     """
-    topics = Topic.objects.all().order_by('order')
+    if interview is not None:
+        topics = Topic.objects.filter(interview=interview).order_by('order')
+    else:
+        topics = Topic.objects.all().order_by('order')
 
     context_parts = []
     total_answers = 0

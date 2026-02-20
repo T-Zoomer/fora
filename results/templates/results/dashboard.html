@@ -437,6 +437,8 @@
     </div>
 
     <script>
+        const INTERVIEW_ID = '{{ interview.uuid }}';
+
         function resultsApp() {
             return {
                 results: [],
@@ -480,7 +482,7 @@
                 async loadResults() {
                     this.loading = true;
                     try {
-                        const response = await fetch('/results/api/results/');
+                        const response = await fetch(`/results/${INTERVIEW_ID}/api/results/`);
                         const data = await response.json();
                         this.results = data.results || [];
                         if (this.results.length > 0) {
@@ -865,7 +867,7 @@
                     });
 
                     try {
-                        const response = await fetch('/results/api/chat/', {
+                        const response = await fetch(`/results/${INTERVIEW_ID}/api/chat/`, {
                             method: 'POST',
                             headers: {
                                 'Content-Type': 'application/json',

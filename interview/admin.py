@@ -1,13 +1,20 @@
 from django.contrib import admin
 
-from .models import Topic, Answer, Respondent
+from .models import Interview, Topic, Answer, Respondent
+
+
+@admin.register(Interview)
+class InterviewAdmin(admin.ModelAdmin):
+    list_display = ['name', 'created_at']
+    fields = ['name', 'intro_message']
 
 
 @admin.register(Topic)
 class TopicAdmin(admin.ModelAdmin):
-    list_display = ['name', 'order', 'analyze_sentiment']
+    list_display = ['name', 'interview', 'order', 'analyze_sentiment']
     list_editable = ['order', 'analyze_sentiment']
-    fields = ['name', 'goal', 'order', 'analyze_sentiment']
+    list_filter = ['interview']
+    fields = ['interview', 'name', 'goal', 'order', 'analyze_sentiment']
 
 
 @admin.register(Answer)
@@ -18,5 +25,5 @@ class AnswerAdmin(admin.ModelAdmin):
 
 @admin.register(Respondent)
 class RespondentAdmin(admin.ModelAdmin):
-    list_display = ['id', 'created_at']
+    list_display = ['id', 'interview', 'created_at']
     readonly_fields = ['created_at']

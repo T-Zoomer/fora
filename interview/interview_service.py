@@ -64,7 +64,7 @@ def generate_response(chat_history, user_message, topics, covered_topic_ids):
     covered_names = [t.name for t in topics if t.pk in covered_topic_ids]
     covered_str = ", ".join(covered_names) if covered_names else "None yet"
 
-    system_prompt = f"""You are conducting a monthly work check-in interview. Be warm but concise.
+    system_prompt = f"""You are conducting a friendly monthly work check-in. Be warm and conversational.
 
 TOPICS ALREADY COVERED: {covered_str}
 
@@ -72,12 +72,12 @@ TOPICS REMAINING:
 {remaining_str}
 
 INSTRUCTIONS:
-1. Keep responses SHORT - one sentence, max two
-2. Do NOT repeat or paraphrase what the user said
-3. Do NOT say things like "I hear you", "That makes sense", "I understand"
-4. Acknowledge briefly ("Got it." / "Thanks.") then move to the next topic
-5. For remaining topics, ask questions that uncover the stated goal
-6. If the user partially addressed a goal, probe naturally for what's still missing
+1. Ask ONE thing at a time — never combine questions
+2. Keep responses SHORT - one sentence, max two
+3. Do NOT repeat or paraphrase what the user said
+4. Do NOT say things like "I hear you", "That makes sense", "I understand"
+5. Acknowledge briefly ("Got it." / "Thanks.") then ask your next question
+6. For each topic: first ask how they're feeling about it. Only ask why/what's driving it if they haven't already explained — probe naturally, don't front-load both questions
 7. When all topics are covered, thank them briefly and end the interview
 
 Just respond naturally as the interviewer. No JSON, no special formatting."""
@@ -85,14 +85,27 @@ Just respond naturally as the interviewer. No JSON, no special formatting."""
     return generate(system_prompt, user_message, history=chat_history)
 
 
-def conduct_interview(user_message, chat_history, previously_covered_topic_ids):
+def generate_opening_question(topics):
+    """Generate the AI's opening question before the respondent has said anything."""
+    first_topic = topics[0].name if topics else "how things are going"
+
+    system_prompt = f"""You are conducting a friendly work check-in. Be warm and natural.
+
+Ask a simple, conversational opening question about {first_topic}.
+One sentence only. Ask just how they're feeling — do NOT ask why or for reasons yet."""
+
+    return generate(system_prompt, "Begin the interview.")
+
+
+def conduct_interview(user_message, chat_history, previously_covered_topic_ids, interview=None):
     """
     Main interview function using the two-AI approach.
     1. Analyzer AI judges which topics are sufficiently covered based on their goals
     2. Interviewer AI generates a response and probes for what's still needed
     """
     from .models import Topic
-    topics = list(Topic.objects.all())
+    qs = Topic.objects.all() if interview is None else Topic.objects.filter(interview=interview)
+    topics = list(qs)
 
     analysis = analyze_message(user_message, chat_history, topics)
 
@@ -106,9 +119,12 @@ def conduct_interview(user_message, chat_history, previously_covered_topic_ids):
             if topic_analysis.get("text"):
                 topic_responses[topic.pk] = topic_analysis["text"]
 
-    ai_response = generate_response(chat_history, user_message, topics, covered_topic_ids)
-
     interview_complete = all(t.pk in covered_topic_ids for t in topics)
+
+    if interview_complete:
+        ai_response = "Thanks for sharing — that's everything! Your responses have been recorded."
+    else:
+        ai_response = generate_response(chat_history, user_message, topics, covered_topic_ids)
 
     return {
         "response": ai_response,
