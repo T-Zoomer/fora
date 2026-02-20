@@ -6,7 +6,7 @@ from django.db import migrations
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('questions', '0003_respondent_answer_respondent'),
+        ('interview', '0003_respondent_answer_respondent'),
         ('results', '0003_analysisresult_sentiment'),
     ]
 

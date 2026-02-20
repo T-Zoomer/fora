@@ -1,11 +1,13 @@
+import json
+import traceback
+
 from django.http import JsonResponse
 from django.shortcuts import render
 from django.views.decorators.http import require_http_methods
 
-from questions.models import Interview, Answer
+from interview.models import Topic, Answer
 from .models import Result
-from .services import run_thematic_coding, run_sentiment_analysis, generate_summary, chat_with_all_answers, discover_themes_only, run_classification_with_themes
-import json
+from .services import run_sentiment_analysis, generate_summary, chat_with_all_answers, discover_themes_only, run_classification_with_themes
 
 
 def dashboard_view(request):
@@ -14,43 +16,43 @@ def dashboard_view(request):
     Result.objects.filter(status__in=['running', 'discovering', 'classifying']).update(status='failed')
     Result.objects.filter(status='editing').update(status='completed')
 
-    interviews = Interview.objects.all()
+    topics = Topic.objects.all()
     total_answers = Answer.objects.count()
     analyzed_count = Result.objects.filter(status='completed').count()
 
     return render(request, 'results/dashboard.html', {
-        'interviews_count': interviews.count(),
+        'topics_count': topics.count(),
         'total_answers': total_answers,
         'analyzed_count': analyzed_count,
     })
 
 
 @require_http_methods(["POST"])
-def run_single_api(request, interview_id):
-    """Trigger processing for a single interview."""
+def run_single_api(request, topic_id):
+    """Trigger processing for a single topic."""
     try:
-        interview = Interview.objects.get(id=interview_id)
-    except Interview.DoesNotExist:
-        return JsonResponse({'error': 'Interview not found'}, status=404)
+        topic = Topic.objects.get(id=topic_id)
+    except Topic.DoesNotExist:
+        return JsonResponse({'error': 'Topic not found'}, status=404)
 
-    answer_count = Answer.objects.filter(interview=interview).count()
+    answer_count = Answer.objects.filter(topic=topic).count()
     if answer_count == 0:
         return JsonResponse({'error': 'No answers to analyze'}, status=400)
 
-    result, _ = Result.objects.get_or_create(interview=interview)
+    result, _ = Result.objects.get_or_create(topic=topic)
     result.status = 'running'
     result.save()
 
     try:
-        proposed = discover_themes_only(interview)
+        proposed = discover_themes_only(topic)
         result.proposed_themes = proposed
         result.save()
 
-        themes = run_classification_with_themes(interview, proposed)
+        themes = run_classification_with_themes(topic, proposed)
         sentiment = {}
-        if interview.analyze_sentiment:
-            sentiment = run_sentiment_analysis(interview)
-        summary = generate_summary(interview)
+        if topic.analyze_sentiment:
+            sentiment = run_sentiment_analysis(topic)
+        summary = generate_summary(topic)
 
         result.themes = themes
         result.sentiment = sentiment
@@ -61,108 +63,44 @@ def run_single_api(request, interview_id):
 
         return JsonResponse({
             'success': True,
-            'interview_id': interview.id,
+            'topic_id': topic.id,
             'status': 'completed',
             'themes_count': len(themes),
         })
     except Exception as e:
-        import traceback
-        print(f"[error] interview {interview.id}: {e}")
+        print(f"[error] topic {topic.id}: {e}")
         traceback.print_exc()
         result.status = 'failed'
         result.save()
         return JsonResponse({
             'success': False,
-            'interview_id': interview.id,
+            'topic_id': topic.id,
             'status': 'failed',
             'error': str(e),
         }, status=500)
 
 
-@require_http_methods(["POST"])
-def run_all_api(request):
-    """Trigger processing for all interviews."""
-    interviews = Interview.objects.all()
-
-    results = []
-    for interview in interviews:
-        # Skip interviews with no answers
-        answer_count = Answer.objects.filter(interview=interview).count()
-        if answer_count == 0:
-            continue
-
-        # Get or create result
-        result, _ = Result.objects.get_or_create(interview=interview)
-
-        # Update status to running
-        result.status = 'running'
-        result.save()
-
-        try:
-            # Run thematic coding
-            themes = run_thematic_coding(interview)
-
-            # Run sentiment analysis (if enabled for this interview)
-            sentiment = {}
-            if interview.analyze_sentiment:
-                sentiment = run_sentiment_analysis(interview)
-
-            # Generate AI summary
-            summary = generate_summary(interview)
-
-            # Save results
-            result.themes = themes
-            result.sentiment = sentiment
-            result.summary = summary
-            result.answer_count = answer_count
-            result.status = 'completed'
-            result.save()
-
-            results.append({
-                'interview_id': interview.id,
-                'status': 'completed',
-                'themes_count': len(themes),
-                'sentiment_avg': sentiment.get('average'),
-            })
-        except Exception as e:
-            import traceback
-            print(f"[error] interview {interview.id}: {e}")
-            traceback.print_exc()
-            result.status = 'failed'
-            result.save()
-            results.append({
-                'interview_id': interview.id,
-                'status': 'failed',
-                'error': str(e),
-            })
-
-    return JsonResponse({
-        'success': True,
-        'results': results,
-    })
-
-
 @require_http_methods(["GET"])
-def get_answers_api(request, interview_id):
-    """Return all answers for an interview (for the quote wall)."""
+def get_answers_api(request, topic_id):
+    """Return all answers for a topic (for the quote wall)."""
     try:
-        interview = Interview.objects.get(id=interview_id)
-    except Interview.DoesNotExist:
-        return JsonResponse({'error': 'Interview not found'}, status=404)
+        topic = Topic.objects.get(id=topic_id)
+    except Topic.DoesNotExist:
+        return JsonResponse({'error': 'Topic not found'}, status=404)
 
-    answers = list(Answer.objects.filter(interview=interview).values('id', 'text'))
+    answers = list(Answer.objects.filter(topic=topic).values('id', 'text'))
     return JsonResponse({'answers': answers})
 
 
 @require_http_methods(["POST"])
-def discover_themes_api(request, interview_id):
+def discover_themes_api(request, topic_id):
     """Run Pass 1 (theme discovery) and save proposed_themes; set status='editing'."""
     try:
-        interview = Interview.objects.get(id=interview_id)
-    except Interview.DoesNotExist:
-        return JsonResponse({'error': 'Interview not found'}, status=404)
+        topic = Topic.objects.get(id=topic_id)
+    except Topic.DoesNotExist:
+        return JsonResponse({'error': 'Topic not found'}, status=404)
 
-    answer_count = Answer.objects.filter(interview=interview).count()
+    answer_count = Answer.objects.filter(topic=topic).count()
     if answer_count == 0:
         return JsonResponse({'error': 'No answers to analyze'}, status=400)
 
@@ -172,43 +110,42 @@ def discover_themes_api(request, interview_id):
         body = {}
     custom_prompt = body.get('custom_prompt', '') or ''
 
-    result, _ = Result.objects.get_or_create(interview=interview)
+    result, _ = Result.objects.get_or_create(topic=topic)
     result.status = 'discovering'
     result.save()
 
     try:
-        themes = discover_themes_only(interview, custom_prompt=custom_prompt or None)
+        themes = discover_themes_only(topic, custom_prompt=custom_prompt or None)
         result.proposed_themes = themes
         result.status = 'editing'
         result.save()
 
         return JsonResponse({
             'success': True,
-            'interview_id': interview.id,
+            'topic_id': topic.id,
             'status': 'editing',
             'proposed_themes': themes,
         })
     except Exception as e:
-        import traceback
-        print(f"[error] discover interview {interview.id}: {e}")
+        print(f"[error] discover topic {topic.id}: {e}")
         traceback.print_exc()
         result.status = 'failed'
         result.save()
         return JsonResponse({
             'success': False,
-            'interview_id': interview.id,
+            'topic_id': topic.id,
             'status': 'failed',
             'error': str(e),
         }, status=500)
 
 
 @require_http_methods(["POST"])
-def classify_with_themes_api(request, interview_id):
+def classify_with_themes_api(request, topic_id):
     """Run Pass 2 with user-edited themes; set status='completed'."""
     try:
-        interview = Interview.objects.get(id=interview_id)
-    except Interview.DoesNotExist:
-        return JsonResponse({'error': 'Interview not found'}, status=404)
+        topic = Topic.objects.get(id=topic_id)
+    except Topic.DoesNotExist:
+        return JsonResponse({'error': 'Topic not found'}, status=404)
 
     try:
         data = json.loads(request.body)
@@ -219,18 +156,18 @@ def classify_with_themes_api(request, interview_id):
     if not themes_input:
         return JsonResponse({'error': 'themes is required'}, status=400)
 
-    answer_count = Answer.objects.filter(interview=interview).count()
-    result, _ = Result.objects.get_or_create(interview=interview)
+    answer_count = Answer.objects.filter(topic=topic).count()
+    result, _ = Result.objects.get_or_create(topic=topic)
     result.status = 'classifying'
     result.save()
 
     try:
-        full_themes = run_classification_with_themes(interview, themes_input)
+        full_themes = run_classification_with_themes(topic, themes_input)
 
         sentiment = {}
-        if interview.analyze_sentiment:
-            sentiment = run_sentiment_analysis(interview)
-        summary = generate_summary(interview)
+        if topic.analyze_sentiment:
+            sentiment = run_sentiment_analysis(topic)
+        summary = generate_summary(topic)
 
         result.themes = full_themes
         result.proposed_themes = themes_input  # save the final user-edited set
@@ -242,19 +179,18 @@ def classify_with_themes_api(request, interview_id):
 
         return JsonResponse({
             'success': True,
-            'interview_id': interview.id,
+            'topic_id': topic.id,
             'status': 'completed',
             'themes_count': len(full_themes),
         })
     except Exception as e:
-        import traceback
-        print(f"[error] classify interview {interview.id}: {e}")
+        print(f"[error] classify topic {topic.id}: {e}")
         traceback.print_exc()
         result.status = 'failed'
         result.save()
         return JsonResponse({
             'success': False,
-            'interview_id': interview.id,
+            'topic_id': topic.id,
             'status': 'failed',
             'error': str(e),
         }, status=500)
@@ -262,18 +198,23 @@ def classify_with_themes_api(request, interview_id):
 
 @require_http_methods(["GET"])
 def get_all_results_api(request):
-    """Get results for all interviews."""
-    interviews = Interview.objects.all().order_by('order')
+    """Get results for all topics."""
+    topics = (
+        Topic.objects
+        .select_related('result')
+        .prefetch_related('answer_set')
+        .order_by('order')
+    )
 
     all_results = []
-    for interview in interviews:
-        result = Result.objects.filter(interview=interview).first()
-        answers = {str(a.id): a.text for a in Answer.objects.filter(interview=interview)}
+    for topic in topics:
+        result = getattr(topic, 'result', None)
+        answers = {str(a.id): a.text for a in topic.answer_set.all()}
 
         if not result or result.status not in ('completed', 'classifying'):
             all_results.append({
-                'interview_id': interview.id,
-                'interview_text': interview.text,
+                'topic_id': topic.id,
+                'topic_text': topic.name,
                 'status': result.status if result else 'pending',
                 'answer_count': len(answers),
                 'themes': [],
@@ -298,8 +239,8 @@ def get_all_results_api(request):
             themes_with_texts.append(theme_copy)
 
         all_results.append({
-            'interview_id': interview.id,
-            'interview_text': interview.text,
+            'topic_id': topic.id,
+            'topic_text': topic.name,
             'status': result.status,
             'analyzed_at': result.analyzed_at.isoformat() if result.analyzed_at else None,
             'answer_count': result.answer_count,

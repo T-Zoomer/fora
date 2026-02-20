@@ -1,9 +1,6 @@
 import json
 
-from django.conf import settings
-from openai import OpenAI
-
-from questions.models import Answer
+from interview.models import Answer, Topic
 from results.llm import generate
 
 
@@ -109,28 +106,28 @@ Use only theme numbers 1 to {len(themes)}."""
                     theme["excerpts"][str(answer_id)] = excerpt
 
 
-def discover_themes_only(interview, custom_prompt=None):
+def discover_themes_only(topic, custom_prompt=None):
     """
     Pass 1 only: discover themes from all answers.
     Returns [{name, description}] — no answer assignments.
     """
-    answers = list(Answer.objects.filter(interview=interview).values('id', 'text'))
+    answers = list(Answer.objects.filter(topic=topic).values('id', 'text'))
     if not answers:
         return []
-    print(f"\n[discover themes] '{interview.text}' — {len(answers)} answers")
-    themes = _discover_themes(answers, interview.text, custom_prompt=custom_prompt)
+    print(f"\n[discover themes] '{topic.name}' — {len(answers)} answers")
+    themes = _discover_themes(answers, topic.name, custom_prompt=custom_prompt)
     return [{"name": t["name"], "description": t["description"]} for t in themes]
 
 
-def run_classification_with_themes(interview, themes):
+def run_classification_with_themes(topic, themes):
     """
     Pass 2 only: classify answers against the provided themes.
     themes: [{name, description}] (user-edited list)
-    Returns full themes with answer_ids and excerpts, plus summary and sentiment dicts.
+    Returns full themes with answer_ids and excerpts.
     """
-    answers = list(Answer.objects.filter(interview=interview).values('id', 'text'))
+    answers = list(Answer.objects.filter(topic=topic).values('id', 'text'))
     if not answers or not themes:
-        return [], {}, ""
+        return []
 
     # Build theme dicts with empty answer_ids/excerpts for classification
     full_themes = [
@@ -139,7 +136,7 @@ def run_classification_with_themes(interview, themes):
     ]
 
     total_batches = (len(answers) + BATCH_SIZE - 1) // BATCH_SIZE
-    print(f"\n[classify with themes] '{interview.text}' — {len(answers)} answers, {len(full_themes)} themes, {total_batches} batches")
+    print(f"\n[classify with themes] '{topic.name}' — {len(answers)} answers, {len(full_themes)} themes, {total_batches} batches")
     _classify_answers(answers, full_themes)
 
     # Filter themes with no answers and cap at MAX_THEMES
@@ -168,63 +165,13 @@ def run_classification_with_themes(interview, themes):
     return full_themes
 
 
-def run_thematic_coding(interview):
-    """
-    Two-pass thematic coding:
-    - Pass 1: discover themes from ALL answers (no sampling)
-    - Pass 2: classify all answers in batches of BATCH_SIZE
-    Returns a list of themes with answer_ids and excerpts. Unassigned answers go to "Other".
-    """
-    answers = list(Answer.objects.filter(interview=interview).values('id', 'text'))
 
-    if not answers:
-        return []
-
-    print(f"\n[thematic coding] '{interview.text}' — {len(answers)} answers")
-
-    print(f"[pass 1] discovering themes from all {len(answers)} answers...")
-    themes = _discover_themes(answers, interview.text)
-
-    if not themes:
-        print("[pass 1] no themes found, aborting")
-        return []
-
-    total_batches = (len(answers) + BATCH_SIZE - 1) // BATCH_SIZE
-    print(f"[pass 2] classifying {len(answers)} answers in {total_batches} batches of {BATCH_SIZE}...")
-    _classify_answers(answers, themes)
-
-    # Filter themes with no answers and cap at MAX_THEMES
-    before = len(themes)
-    themes = [t for t in themes if len(t["answer_ids"]) >= 1]
-    themes = themes[:MAX_THEMES]
-    print(f"  [filter] kept {len(themes)}/{before} themes (≥1 answer, max {MAX_THEMES})")
-
-    # Collect all assigned answer IDs
-    assigned_ids = set()
-    for theme in themes:
-        assigned_ids.update(theme["answer_ids"])
-
-    # Put unassigned answers in an "Other" theme
-    unassigned = [a for a in answers if a['id'] not in assigned_ids]
-    if unassigned:
-        print(f"  [other] {len(unassigned)} answers unassigned → adding 'Other' theme")
-        themes.append({
-            "name": "Other",
-            "description": "Answers that did not clearly fit into any of the identified themes.",
-            "answer_ids": [a['id'] for a in unassigned],
-            "excerpts": {},
-        })
-
-    print(f"  [done] {len(themes)} final themes, {len(assigned_ids)} answers assigned to named themes\n")
-    return themes
-
-
-def run_sentiment_analysis(interview):
+def run_sentiment_analysis(topic):
     """
     Analyze the sentiment of each answer.
     Returns a dict with average score and per-answer scores (1-10).
     """
-    answers = list(Answer.objects.filter(interview=interview).values('id', 'text'))
+    answers = list(Answer.objects.filter(topic=topic).values('id', 'text'))
 
     if not answers:
         return {"average": None, "answers": []}
@@ -255,12 +202,12 @@ Include every answer ID provided. Be consistent in your scoring."""
     return {"average": avg, "answers": answer_scores}
 
 
-def generate_summary(interview):
+def generate_summary(topic):
     """
-    Generate an AI summary of all answers to an interview.
+    Generate an AI summary of all answers to a topic.
     Returns a concise paragraph summarizing the key points.
     """
-    answers = list(Answer.objects.filter(interview=interview).values('id', 'text'))
+    answers = list(Answer.objects.filter(topic=topic).values('id', 'text'))
 
     if not answers:
         return ""
@@ -272,7 +219,7 @@ Write a concise summary (2-4 sentences) that captures the main points and overal
 Focus on the most common themes and any notable patterns or outliers.
 Write in a neutral, professional tone. Do not use bullet points."""
 
-    return generate(system_prompt, f"Summarize these responses to the interview \"{interview.text}\":\n\n{answers_text}")
+    return generate(system_prompt, f"Summarize these responses to the question \"{topic.name}\":\n\n{answers_text}")
 
 
 def chat_with_all_answers(user_message, chat_history=None):
@@ -280,18 +227,16 @@ def chat_with_all_answers(user_message, chat_history=None):
     Chat about all interview answers using GPT-4o.
     The AI has access to all interviews and their answers as context.
     """
-    from questions.models import Interview
-
-    interviews = Interview.objects.all().order_by('order')
+    topics = Topic.objects.all().order_by('order')
 
     context_parts = []
     total_answers = 0
 
-    for interview in interviews:
-        answers = list(Answer.objects.filter(interview=interview).values('text'))
+    for topic in topics:
+        answers = list(Answer.objects.filter(topic=topic).values('text'))
         if answers:
             answers_text = "\n".join([f"  - {a['text']}" for a in answers])
-            context_parts.append(f"**{interview.text}** ({len(answers)} responses):\n{answers_text}")
+            context_parts.append(f"**{topic.name}** ({len(answers)} responses):\n{answers_text}")
             total_answers += len(answers)
 
     if total_answers == 0:
@@ -299,31 +244,12 @@ def chat_with_all_answers(user_message, chat_history=None):
 
     full_context = "\n\n".join(context_parts)
 
-    client = OpenAI(api_key=settings.OPENAI_API_KEY)
-
-    messages = [
-        {
-            "role": "system",
-            "content": f"""You are a helpful assistant that analyzes survey responses about workplace productivity and wellbeing.
+    system_prompt = f"""You are a helpful assistant that analyzes survey responses.
 
 Here is the complete survey data:
 
 {full_context}
 
 Answer questions based on the responses above. Be specific and reference actual responses when relevant. Be concise but comprehensive."""
-        }
-    ]
 
-    if chat_history:
-        for msg in chat_history:
-            messages.append({"role": msg["role"], "content": msg["content"]})
-
-    messages.append({"role": "user", "content": user_message})
-
-    response = client.chat.completions.create(
-        model="gpt-4o",
-        messages=messages,
-        max_tokens=1000
-    )
-
-    return response.choices[0].message.content
+    return generate(system_prompt, user_message, history=chat_history)

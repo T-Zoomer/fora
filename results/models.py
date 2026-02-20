@@ -1,10 +1,10 @@
 from django.db import models
 
-from questions.models import Interview
+from interview.models import Topic
 
 
 class Result(models.Model):
-    interview = models.OneToOneField(Interview, on_delete=models.CASCADE)
+    topic = models.OneToOneField(Topic, on_delete=models.CASCADE)
 
     # AI summary
     summary = models.TextField(blank=True, default='')
@@ -19,10 +19,10 @@ class Result(models.Model):
     # Metadata
     analyzed_at = models.DateTimeField(auto_now=True)
     answer_count = models.IntegerField(default=0)
-    status = models.CharField(max_length=20, default='pending')  # pending, discovering, editing, classifying, completed, failed
+    status = models.CharField(max_length=20, default='pending')  # pending, running, discovering, editing, classifying, completed, failed
 
     class Meta:
         db_table = 'analysis_analysisresult'
 
     def __str__(self):
-        return f"Result for: {self.interview}"
+        return f"Result for: {self.topic}"

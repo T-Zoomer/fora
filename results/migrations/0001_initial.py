@@ -9,7 +9,7 @@ class Migration(migrations.Migration):
     initial = True
 
     dependencies = [
-        ('questions', '0001_initial'),
+        ('interview', '0001_initial'),
     ]
 
     operations = [
@@ -23,7 +23,7 @@ class Migration(migrations.Migration):
                 ('analyzed_at', models.DateTimeField(auto_now=True)),
                 ('answer_count', models.IntegerField(default=0)),
                 ('status', models.CharField(default='pending', max_length=20)),
-                ('question', models.OneToOneField(on_delete=django.db.models.deletion.CASCADE, to='questions.question')),
+                ('question', models.OneToOneField(on_delete=django.db.models.deletion.CASCADE, to='interview.question')),
             ],
         ),
     ]

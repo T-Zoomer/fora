@@ -160,10 +160,14 @@
                 interviewComplete: false,
 
                 async init() {
-                    // Load topics
                     const response = await fetch('/api/interview/topics/');
                     const data = await response.json();
                     this.topics = data.topics.map(t => ({ ...t, expanded: false }));
+
+                    // Use the first topic's question as the opening message
+                    if (this.topics.length > 0 && this.topics[0].question) {
+                        this.messages[0].content = this.topics[0].question;
+                    }
 
                     this.$nextTick(() => this.$refs.input?.focus());
                 },
@@ -197,7 +201,6 @@
                         });
 
                         const data = await response.json();
-                        console.log('API Response:', JSON.stringify(data, null, 2));
 
                         if (data.success) {
                             // Update saved answers for newly covered topics

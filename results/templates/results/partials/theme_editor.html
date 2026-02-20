@@ -4,12 +4,12 @@
         <h3 class="text-xs font-medium text-gray-500 uppercase tracking-wide">Themes</h3>
         <button
             @click="rediscoverThemes(selectedIndex)"
-            :disabled="!!discoveringIds[results[selectedIndex]?.interview_id]"
+            :disabled="!!discoveringIds[results[selectedIndex]?.topic_id]"
             class="text-xs text-gray-400 hover:text-gray-600 transition-colors disabled:opacity-40"
             title="Re-discover with AI (overwrites your edits)"
         >
-            <span x-show="!discoveringIds[results[selectedIndex]?.interview_id]">↺ Re-discover with AI</span>
-            <span x-show="!!discoveringIds[results[selectedIndex]?.interview_id]">Discovering...</span>
+            <span x-show="!discoveringIds[results[selectedIndex]?.topic_id]">↺ Re-discover with AI</span>
+            <span x-show="!!discoveringIds[results[selectedIndex]?.topic_id]">Discovering...</span>
         </button>
     </div>
 
@@ -70,11 +70,11 @@
         <!-- Run Analysis button -->
         <button
             @click="runClassification(selectedIndex)"
-            :disabled="!!classifyingIds[results[selectedIndex]?.interview_id] || proposedThemes.length === 0"
+            :disabled="!!classifyingIds[results[selectedIndex]?.topic_id] || proposedThemes.length === 0"
             class="w-full text-sm py-2 px-3 bg-gray-900 text-white rounded hover:bg-gray-800 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
         >
-            <span x-show="!classifyingIds[results[selectedIndex]?.interview_id]">Run Analysis</span>
-            <span x-show="!!classifyingIds[results[selectedIndex]?.interview_id]">Classifying...</span>
+            <span x-show="!classifyingIds[results[selectedIndex]?.topic_id]">Run Analysis</span>
+            <span x-show="!!classifyingIds[results[selectedIndex]?.topic_id]">Classifying...</span>
         </button>
     </div>
 </div>

@@ -37,14 +37,14 @@
                     Loading...
                 </div>
 
-                <template x-for="(result, index) in results" :key="result.interview_id">
+                <template x-for="(result, index) in results" :key="result.topic_id">
                     <div
                         @click="selectInterview(index)"
                         :class="selectedIndex === index ? 'bg-gray-50 border-l-2 border-gray-900' : 'border-l-2 border-transparent hover:bg-gray-50'"
                         class="p-4 cursor-pointer transition-colors"
                     >
                         <p class="text-xs text-gray-400 mb-1" x-text="'Topic ' + (index + 1)"></p>
-                        <p class="text-sm text-gray-900 line-clamp-2" x-text="result.interview_text"></p>
+                        <p class="text-sm text-gray-900 line-clamp-2" x-text="result.topic_text"></p>
 
                         <p class="text-xs text-gray-400 mt-2" x-show="result.status === 'completed'">
                             <span x-text="result.themes.length + ' themes · ' + result.answer_count + ' answers'"></span>
@@ -53,10 +53,9 @@
                                 <span x-text="result.sentiment?.average?.toFixed(1)"></span>
                             </span>
                         </p>
-                        <p x-show="result.status === 'editing'" class="text-xs text-blue-400 mt-2">Theme editor</p>
                         <p x-show="result.status === 'discovering'" class="text-xs text-gray-400 mt-2">Discovering themes...</p>
                         <p x-show="result.status === 'classifying'" class="text-xs text-gray-400 mt-2">Classifying...</p>
-                        <p x-show="!['completed','editing','discovering','classifying'].includes(result.status)" class="text-xs text-gray-400 mt-2" x-text="result.status === 'failed' ? 'Failed' : 'Not processed'"></p>
+                        <p x-show="!['completed','discovering','classifying'].includes(result.status)" class="text-xs text-gray-400 mt-2" x-text="result.status === 'failed' ? 'Failed' : 'Not processed'"></p>
                     </div>
                 </template>
             </div>
@@ -85,35 +84,50 @@
                                 <div class="mb-8 flex items-start justify-between gap-4">
                                     <div>
                                         <p class="text-xs text-gray-400 mb-2" x-text="'Topic ' + (selectedIndex + 1)"></p>
-                                        <h2 class="text-xl font-medium text-gray-900" x-text="results[selectedIndex]?.interview_text"></h2>
+                                        <h2 class="text-xl font-medium text-gray-900" x-text="results[selectedIndex]?.topic_text"></h2>
                                     </div>
 
-                                    <!-- Phase 1 button: Generate -->
-                                    <button
-                                        x-show="isPhase1()"
-                                        @click="runSingle(selectedIndex)"
-                                        :disabled="!!runningIds[results[selectedIndex]?.interview_id]"
-                                        class="flex-shrink-0 mt-1 text-sm px-3 py-1.5 rounded border border-gray-200 text-gray-600 hover:bg-gray-100 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-                                    >
-                                        <span x-show="!runningIds[results[selectedIndex]?.interview_id]">Generate</span>
-                                        <span x-show="!!runningIds[results[selectedIndex]?.interview_id]">Running...</span>
-                                    </button>
 
                                     <!-- Phase 3 button: Re-analyse (opens editor, no API call) -->
                                     <button
                                         x-show="isPhase3()"
                                         @click="openEditor(selectedIndex)"
-                                        :disabled="!!classifyingIds[results[selectedIndex]?.interview_id]"
+                                        :disabled="!!classifyingIds[results[selectedIndex]?.topic_id]"
                                         class="flex-shrink-0 mt-1 text-sm px-3 py-1.5 rounded border border-gray-200 text-gray-600 hover:bg-gray-100 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                                     >
-                                        <span x-show="!classifyingIds[results[selectedIndex]?.interview_id]">Change themes</span>
-                                        <span x-show="!!classifyingIds[results[selectedIndex]?.interview_id]">Classifying...</span>
+                                        <span x-show="!classifyingIds[results[selectedIndex]?.topic_id]">Change themes</span>
+                                        <span x-show="!!classifyingIds[results[selectedIndex]?.topic_id]">Classifying...</span>
                                     </button>
                                 </div>
 
                                 <!-- Phase 1 empty state -->
-                                <div x-show="isPhase1()" class="py-12 text-center">
-                                    <p class="text-gray-400" x-text="runningIds[results[selectedIndex]?.interview_id] ? 'Running analysis...' : (results[selectedIndex]?.status === 'failed' ? 'Analysis failed. Try again.' : 'No results yet')"></p>
+                                <div x-show="isPhase1()" class="py-16 flex flex-col items-center justify-center text-center gap-5">
+                                    <template x-if="!!runningIds[results[selectedIndex]?.topic_id]">
+                                        <div class="flex flex-col items-center gap-3">
+                                            <svg class="animate-spin w-6 h-6 text-gray-400" fill="none" viewBox="0 0 24 24">
+                                                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"></path>
+                                            </svg>
+                                            <p class="text-sm text-gray-400">Running analysis…</p>
+                                        </div>
+                                    </template>
+                                    <template x-if="!runningIds[results[selectedIndex]?.topic_id]">
+                                        <div class="flex flex-col items-center gap-5">
+                                            <div>
+                                                <p class="text-base font-medium text-gray-700 mb-1" x-text="results[selectedIndex]?.status === 'failed' ? 'Analysis failed' : 'Ready to analyse'"></p>
+                                                <p class="text-sm text-gray-400" x-text="results[selectedIndex]?.status === 'failed' ? 'Something went wrong. You can try again below.' : 'Let AI discover themes, sentiment and a summary across all responses.'"></p>
+                                            </div>
+                                            <button
+                                                @click="runSingle(selectedIndex)"
+                                                class="flex items-center gap-2 px-6 py-3 bg-gray-900 text-white text-sm font-medium rounded-lg hover:bg-gray-800 transition-colors shadow-sm"
+                                            >
+                                                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z" />
+                                                </svg>
+                                                <span x-text="results[selectedIndex]?.status === 'failed' ? 'Try again' : 'Analyse answers with AI'"></span>
+                                            </button>
+                                        </div>
+                                    </template>
                                 </div>
 
                                 <!-- Phase 3: Results -->
@@ -235,10 +249,10 @@
                         <!-- ══════════════════════════════════════ -->
                         <!-- PHASE 2: Theme Editor (stacked)       -->
                         <!-- ══════════════════════════════════════ -->
-                        <div x-show="isPhase2()" class="flex-1 flex flex-col overflow-hidden">
+                        <div x-show="isPhase2()" class="flex-1 overflow-y-auto scrollbar-thin">
 
-                            <!-- Theme Editor panel (top, auto height, max ~50vh) -->
-                            <div class="flex-shrink-0 border-b border-gray-200">
+                            <!-- Theme Editor panel -->
+                            <div class="border-b border-gray-200">
                                 <!-- Header row -->
                                 <div class="flex items-start justify-between gap-4 px-6 pt-5 pb-4">
                                     <div>
@@ -251,25 +265,25 @@
                                             Back to results
                                         </button>
                                         <p class="text-xs text-gray-400 mb-0.5" x-text="'Topic ' + (selectedIndex + 1)"></p>
-                                        <h2 class="text-base font-medium text-gray-900" x-text="results[selectedIndex]?.interview_text"></h2>
+                                        <h2 class="text-base font-medium text-gray-900" x-text="results[selectedIndex]?.topic_text"></h2>
                                     </div>
                                     <div class="flex items-center gap-2 flex-shrink-0">
                                         <button
                                             @click="toggleRediscover()"
-                                            :disabled="!!discoveringIds[results[selectedIndex]?.interview_id]"
+                                            :disabled="!!discoveringIds[results[selectedIndex]?.topic_id]"
                                             :class="rediscoverOpen ? 'border-gray-400 text-gray-700 bg-gray-50' : 'border-gray-200 text-gray-500'"
                                             class="text-sm px-3 py-1.5 border rounded hover:bg-gray-50 transition-colors disabled:opacity-40"
                                         >
-                                            <span x-show="!discoveringIds[results[selectedIndex]?.interview_id]">↺ Re-discover</span>
-                                            <span x-show="!!discoveringIds[results[selectedIndex]?.interview_id]">Discovering...</span>
+                                            <span x-show="!discoveringIds[results[selectedIndex]?.topic_id]">↺ Re-discover</span>
+                                            <span x-show="!!discoveringIds[results[selectedIndex]?.topic_id]">Discovering...</span>
                                         </button>
                                         <button
                                             @click="runClassification(selectedIndex)"
-                                            :disabled="!!classifyingIds[results[selectedIndex]?.interview_id] || proposedThemes.length === 0"
+                                            :disabled="!!classifyingIds[results[selectedIndex]?.topic_id] || proposedThemes.length === 0"
                                             class="text-sm px-3 py-1.5 bg-gray-900 text-white rounded hover:bg-gray-800 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                                         >
-                                            <span x-show="!classifyingIds[results[selectedIndex]?.interview_id]">Run Analysis</span>
-                                            <span x-show="!!classifyingIds[results[selectedIndex]?.interview_id]">Classifying...</span>
+                                            <span x-show="!classifyingIds[results[selectedIndex]?.topic_id]">Run Analysis</span>
+                                            <span x-show="!!classifyingIds[results[selectedIndex]?.topic_id]">Classifying...</span>
                                         </button>
                                     </div>
                                 </div>
@@ -294,18 +308,18 @@
                                 </div>
 
                                 <!-- Loading state (re-discover or classify in progress) -->
-                                <template x-if="discoveringIds[results[selectedIndex]?.interview_id] || classifyingIds[results[selectedIndex]?.interview_id]">
+                                <template x-if="discoveringIds[results[selectedIndex]?.topic_id] || classifyingIds[results[selectedIndex]?.topic_id]">
                                     <div class="flex flex-col items-center justify-center py-12 px-6 gap-3">
                                         <svg class="animate-spin w-6 h-6 text-gray-400" fill="none" viewBox="0 0 24 24">
                                             <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
                                             <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"></path>
                                         </svg>
-                                        <p class="text-sm text-gray-400" x-text="discoveringIds[results[selectedIndex]?.interview_id] ? 'Discovering themes…' : 'Classifying answers…'"></p>
+                                        <p class="text-sm text-gray-400" x-text="discoveringIds[results[selectedIndex]?.topic_id] ? 'Discovering themes…' : 'Classifying answers…'"></p>
                                     </div>
                                 </template>
 
                                 <!-- Themes title + instructions + rows -->
-                                <template x-if="!discoveringIds[results[selectedIndex]?.interview_id] && !classifyingIds[results[selectedIndex]?.interview_id]">
+                                <template x-if="!discoveringIds[results[selectedIndex]?.topic_id] && !classifyingIds[results[selectedIndex]?.topic_id]">
                                     <div>
                                         <div class="px-6 pb-3">
                                             <h3 class="text-base font-medium text-gray-900 mb-1">Theme editor</h3>
@@ -357,7 +371,7 @@
             </div>
 
             <!-- Chat View -->
-            <div x-show="chatOpen" class="flex-1 flex flex-col p-6">
+            <div x-show="chatOpen" class="flex-1 flex flex-col overflow-hidden p-6">
                 <div class="mb-4 flex items-center justify-between">
                     <h2 class="text-xl font-medium text-gray-900">Chat with respondents</h2>
                     <button
@@ -368,7 +382,7 @@
                     </button>
                 </div>
 
-                <div class="flex-1 overflow-y-auto space-y-3 mb-4 scrollbar-thin" x-ref="chatMessages">
+                <div class="flex-1 min-h-0 overflow-y-auto space-y-3 mb-4 scrollbar-thin" x-ref="chatMessages">
                     <template x-if="chatMessages.length === 0">
                         <div class="text-center py-12">
                             <p class="text-gray-400 mb-2">Ask questions about your interview data</p>
@@ -432,13 +446,13 @@
 
                 // Phase-specific state
                 proposedThemes: [],   // user-editable themes for Phase 2
-                allAnswers: [],       // quote wall answers
-                wallOpen: false,      // see all answers toggle
-                runningIds: {},       // {interview_id: true} while full pipeline runs (Phase 1)
-                discoveringIds: {},   // {interview_id: true} while re-discovering (Phase 2)
-                classifyingIds: {},   // {interview_id: true} while classifying (Phase 2)
-                rediscoverOpen: false,   // inline prompt panel open
-                rediscoverPrompt: '',    // optional instructions for re-discovery
+                allAnswers: [],
+                editorOpen: false,    // transient: theme editor open (never persisted)
+                runningIds: {},       // {topic_id: true} while full pipeline runs (Phase 1)
+                discoveringIds: {},   // {topic_id: true} while re-discovering (Phase 2)
+                classifyingIds: {},   // {topic_id: true} while classifying (Phase 2)
+                rediscoverOpen: false,
+                rediscoverPrompt: '',
 
                 // Chat
                 chatMessages: [],
@@ -449,19 +463,17 @@
                 isPhase1() {
                     if (this.selectedIndex === null) return true;
                     const s = this.results[this.selectedIndex]?.status;
-                    return !s || ['pending', 'failed', 'not_analyzed'].includes(s);
+                    return !s || ['pending', 'failed', 'not_analyzed', 'editing'].includes(s);
                 },
                 isPhase2() {
                     if (this.selectedIndex === null) return false;
                     const s = this.results[this.selectedIndex]?.status;
-                    // Also treat as Phase 2 when we have proposedThemes loaded in memory
-                    // but status is 'editing' in the DB
-                    return ['discovering', 'editing'].includes(s);
+                    return this.editorOpen || s === 'discovering';
                 },
                 isPhase3() {
                     if (this.selectedIndex === null) return false;
                     const s = this.results[this.selectedIndex]?.status;
-                    return ['classifying', 'completed'].includes(s);
+                    return !this.editorOpen && ['classifying', 'completed'].includes(s);
                 },
 
                 // ─── Data loading ──────────────────────────────
@@ -473,7 +485,10 @@
                         this.results = data.results || [];
                         if (this.results.length > 0) {
                             const firstCompleted = this.results.findIndex(r => r.status === 'completed');
-                            this.selectedIndex = firstCompleted >= 0 ? firstCompleted : 0;
+                            const idx = firstCompleted >= 0 ? firstCompleted : 0;
+                            this.selectedIndex = idx;
+                            const status = this.results[idx]?.status;
+                            this.loadAnswers(this.results[idx]?.topic_id);
                         }
                     } catch (error) {
                         console.error('Failed to load results:', error);
@@ -498,15 +513,16 @@
                     this.chatOpen = false;
                     this.proposedThemes = [];
                     this.allAnswers = [];
-                    this.wallOpen = false;
+                    this.editorOpen = false;
                     this.rediscoverOpen = false;
+                    this.loadAnswers(this.results[index]?.topic_id);
                 },
 
                 // ─── Phase 1: full pipeline run ───────────────
                 async runSingle(index) {
                     const result = this.results[index];
                     if (!result) return;
-                    const id = result.interview_id;
+                    const id = result.topic_id;
                     this.runningIds = { ...this.runningIds, [id]: true };
                     this.results[index] = { ...this.results[index], status: 'running' };
                     try {
@@ -536,7 +552,7 @@
                 async discoverThemes(index, customPrompt = '') {
                     const result = this.results[index];
                     if (!result) return;
-                    const id = result.interview_id;
+                    const id = result.topic_id;
                     this.discoveringIds = { ...this.discoveringIds, [id]: true };
                     // Optimistically set status to 'discovering'
                     this.results[index] = { ...this.results[index], status: 'discovering' };
@@ -550,16 +566,13 @@
                         const data = await response.json();
                         if (data.success) {
                             this.proposedThemes = data.proposed_themes || [];
-                            // Update local status to 'editing'
-                            this.results[index] = { ...this.results[index], status: 'editing', proposed_themes: this.proposedThemes };
+                            this.editorOpen = true;
                             await this.loadAnswers(id);
                         } else {
                             alert('Discovery failed: ' + (data.error || 'Unknown error'));
-                            this.results[index] = { ...this.results[index], status: 'failed' };
                         }
                     } catch (error) {
                         alert('Network error: ' + error.message);
-                        this.results[index] = { ...this.results[index], status: 'failed' };
                     } finally {
                         const ids = { ...this.discoveringIds };
                         delete ids[id];
@@ -582,10 +595,8 @@
 
                 // ─── Phase 2 → Phase 3: back to results (no API) ─
                 backToResults(index) {
-                    this.results[index] = { ...this.results[index], status: 'completed' };
+                    this.editorOpen = false;
                     this.proposedThemes = [];
-                    this.allAnswers = [];
-                    this.wallOpen = false;
                     this.rediscoverOpen = false;
                     this.rediscoverPrompt = '';
                 },
@@ -600,17 +611,15 @@
                     for (const t of (result.themes || [])) countMap[t.name] = t.count || 0;
                     themes.sort((a, b) => (countMap[b.name] || 0) - (countMap[a.name] || 0));
                     this.proposedThemes = themes;
-                    this.wallOpen = false;
-                    // Set status to 'editing' locally
-                    this.results[index] = { ...this.results[index], status: 'editing' };
-                    await this.loadAnswers(result.interview_id);
+                    this.editorOpen = true;
+                    await this.loadAnswers(result.topic_id);
                 },
 
                 // ─── Phase 2 → Phase 3: run classification ─────
                 async runClassification(index) {
                     const result = this.results[index];
                     if (!result || this.proposedThemes.length === 0) return;
-                    const id = result.interview_id;
+                    const id = result.topic_id;
                     this.classifyingIds = { ...this.classifyingIds, [id]: true };
                     this.results[index] = { ...this.results[index], status: 'classifying' };
 
@@ -622,9 +631,9 @@
                         });
                         const data = await response.json();
                         if (data.success) {
-                            // Reload all results to get fresh data
+                            this.editorOpen = false;
+                            this.proposedThemes = [];
                             await this.loadResults();
-                            // Re-select the same index
                             this.selectedIndex = index;
                         } else {
                             alert('Classification failed: ' + (data.error || 'Unknown error'));

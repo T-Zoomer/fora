@@ -8,7 +8,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('questions', '0002_question_analyze_sentiment'),
+        ('interview', '0002_question_analyze_sentiment'),
     ]
 
     operations = [
@@ -23,6 +23,6 @@ class Migration(migrations.Migration):
         migrations.AddField(
             model_name='answer',
             name='respondent',
-            field=models.ForeignKey(null=True, on_delete=django.db.models.deletion.CASCADE, to='questions.respondent'),
+            field=models.ForeignKey(null=True, on_delete=django.db.models.deletion.CASCADE, to='interview.respondent'),
         ),
     ]
