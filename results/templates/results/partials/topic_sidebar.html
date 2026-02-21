@@ -1,0 +1,30 @@
+<div class="w-80 border-r border-gray-200 flex flex-col">
+    <div class="flex-1 overflow-y-auto scrollbar-thin">
+        <div x-show="loading" class="p-4 text-center text-gray-400 text-sm">
+            Loading...
+        </div>
+
+        <template x-for="(result, index) in results" :key="result.topic_id">
+            <div
+                @click="selectInterview(index)"
+                :class="selectedIndex === index ? 'bg-gray-50 border-l-2 border-gray-900' : 'border-l-2 border-transparent hover:bg-gray-50'"
+                class="p-4 cursor-pointer transition-colors"
+            >
+                <p class="text-xs text-gray-400 mb-1" x-text="'Topic ' + (index + 1)"></p>
+                <p class="text-sm text-gray-900 line-clamp-2" x-text="result.topic_text"></p>
+
+                <p class="text-xs text-gray-400 mt-2" x-show="result.status === 'completed'">
+                    <span x-text="result.themes.length + ' themes · ' + result.answer_count + ' answers'"></span>
+                    <span x-show="result.sentiment?.average != null" class="ml-1">
+                        · <span x-text="getSentimentEmoji(result.sentiment?.average)"></span>
+                        <span x-text="result.sentiment?.average?.toFixed(1)"></span>
+                    </span>
+                </p>
+                <p x-show="result.status === 'discovering'" class="text-xs text-gray-400 mt-2">Discovering themes…</p>
+                <p x-show="result.status === 'classifying'" class="text-xs text-gray-400 mt-2">Classifying…</p>
+                <p x-show="result.status === 'running'" class="text-xs text-gray-400 mt-2">Analysing…</p>
+                <p x-show="result.status === 'failed'" class="text-xs text-red-400 mt-2">Failed</p>
+            </div>
+        </template>
+    </div>
+</div>

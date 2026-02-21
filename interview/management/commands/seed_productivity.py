@@ -1,6 +1,6 @@
 from django.core.management.base import BaseCommand
 
-from interview.models import Answer, Topic, Respondent
+from interview.models import Answer, Topic, InterviewSession
 
 MAIN_QUESTION = "How productive were you feeling at work this week?"
 FOLLOWUP_QUESTION = "What was making you feel productive (or not productive) this week?"
@@ -245,9 +245,9 @@ class Command(BaseCommand):
         )
 
         for main_text, followup_text in RESPONSES:
-            respondent = Respondent.objects.create()
-            Answer.objects.create(topic=main_topic, respondent=respondent, text=main_text)
-            Answer.objects.create(topic=followup_topic, respondent=respondent, text=followup_text)
+            session = InterviewSession.objects.create()
+            Answer.objects.create(topic=main_topic, session=session, text=main_text)
+            Answer.objects.create(topic=followup_topic, session=session, text=followup_text)
 
         self.stdout.write(
             self.style.SUCCESS(

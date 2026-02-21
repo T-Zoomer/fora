@@ -1,0 +1,28 @@
+<div x-show="isFailed()" class="py-16 flex flex-col items-center justify-center text-center gap-5">
+    <template x-if="!!runningIds[results[selectedIndex]?.topic_id]">
+        <div class="flex flex-col items-center gap-3">
+            <svg class="animate-spin w-6 h-6 text-gray-400" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"></path>
+            </svg>
+            <p class="text-sm text-gray-400">Running analysis…</p>
+        </div>
+    </template>
+    <template x-if="!runningIds[results[selectedIndex]?.topic_id]">
+        <div class="flex flex-col items-center gap-5">
+            <div>
+                <p class="text-base font-medium text-gray-700 mb-1"
+                   x-text="results[selectedIndex]?.status === 'failed' ? 'Analysis failed' : 'No answers'"></p>
+                <p class="text-sm text-gray-400"
+                   x-text="results[selectedIndex]?.status === 'failed' ? 'Something went wrong. You can retry below.' : 'No responses were collected for this topic.'"></p>
+            </div>
+            <button
+                x-show="results[selectedIndex]?.status === 'failed'"
+                @click="runSingle(selectedIndex)"
+                class="flex items-center gap-2 px-5 py-2.5 bg-gray-900 text-white text-sm font-medium rounded-lg hover:bg-gray-800 transition-colors"
+            >
+                Retry analysis
+            </button>
+        </div>
+    </template>
+</div>

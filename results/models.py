@@ -17,7 +17,7 @@ class Result(models.Model):
     sentiment = models.JSONField(default=dict)  # {average: 0.65, answers: [{id, score}, ...]}
 
     # Metadata
-    analyzed_at = models.DateTimeField(auto_now=True)
+    analyzed_at = models.DateTimeField(null=True, blank=True)
     answer_count = models.IntegerField(default=0)
     status = models.CharField(max_length=20, default='pending')  # pending, running, discovering, editing, classifying, completed, failed
 

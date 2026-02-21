@@ -4,7 +4,7 @@ from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_http_methods
 
-from .models import Topic, Answer, Respondent, Interview
+from .models import Topic, Answer, InterviewSession, Interview
 from .interview_service import conduct_interview, generate_opening_question
 
 
@@ -14,19 +14,6 @@ def interview_redirect_view(request):
         from django.http import Http404
         raise Http404
     return redirect(f'/{interview.uuid}/')
-
-
-def get_or_create_respondent(request, interview):
-    session_key = f'respondent_id_{interview.id}'
-    respondent_id = request.session.get(session_key)
-    if respondent_id:
-        try:
-            return Respondent.objects.get(id=respondent_id)
-        except Respondent.DoesNotExist:
-            pass
-    respondent = Respondent.objects.create(interview=interview)
-    request.session[session_key] = respondent.id
-    return respondent
 
 
 def interview_view(request, interview_id):
@@ -69,18 +56,24 @@ def interview_chat_api(request, interview_id):
         interview = get_object_or_404(Interview, uuid=interview_id)
         result = conduct_interview(user_message, chat_history, covered_topics, interview=interview)
 
-        respondent = get_or_create_respondent(request, interview=interview)
         newly_covered = [t for t in result['covered_topics'] if t not in covered_topics]
         topic_responses = result.get('topic_responses', {})
 
+        # Buffer answers in session — only flush to DB on completion
+        buffer_key = f'answers_{interview.id}'
+        buffered = request.session.get(buffer_key, {})
         for topic_id in newly_covered:
-            topic_obj = Topic.objects.get(pk=topic_id)
-            answer_text = topic_responses.get(topic_id, user_message)
-            Answer.objects.create(
-                topic=topic_obj,
-                respondent=respondent,
-                text=answer_text
-            )
+            buffered[str(topic_id)] = topic_responses.get(topic_id, user_message)
+        request.session[buffer_key] = buffered
+        request.session.modified = True
+
+        if result['interview_complete']:
+            session = InterviewSession.objects.create(interview=interview)
+            for topic_id_str, answer_text in buffered.items():
+                topic_obj = Topic.objects.get(pk=int(topic_id_str))
+                Answer.objects.create(topic=topic_obj, session=session, text=answer_text)
+            del request.session[buffer_key]
+            request.session.modified = True
 
         raw_answers = {topic_id: topic_responses.get(topic_id, user_message) for topic_id in newly_covered}
 

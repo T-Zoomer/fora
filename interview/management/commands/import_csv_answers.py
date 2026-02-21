@@ -2,7 +2,7 @@ import csv
 
 from django.core.management.base import BaseCommand
 
-from interview.models import Answer, Topic, Respondent
+from interview.models import Answer, Topic, InterviewSession
 
 QUESTION_TEXT = (
     "U heeft aangegeven dat regels over gezond en veilig werken en/of andere regels of wetten "
@@ -40,7 +40,7 @@ class Command(BaseCommand):
                 self.stdout.write(f"  {row['SteekproefEenheidID']}: {row['RegAnders'][:80]}")
             return
 
-        topic, created = Topic.objects.get_or_create(text=QUESTION_TEXT)
+        topic, created = Topic.objects.get_or_create(name=QUESTION_TEXT)
         if created:
             self.stdout.write(f"Created Topic (id={topic.pk})")
         else:
@@ -48,10 +48,10 @@ class Command(BaseCommand):
 
         imported = 0
         for row in rows:
-            respondent = Respondent.objects.create()
+            session = InterviewSession.objects.create()
             Answer.objects.create(
                 topic=topic,
-                respondent=respondent,
+                session=session,
                 text=row["RegAnders"].strip(),
             )
             imported += 1

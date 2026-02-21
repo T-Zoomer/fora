@@ -18,19 +18,19 @@ class Interview(models.Model):
         return self.name
 
 
-class Respondent(models.Model):
+class InterviewSession(models.Model):
     interview = models.ForeignKey(
-        Interview, on_delete=models.SET_NULL, null=True, related_name='respondents'
+        Interview, on_delete=models.CASCADE, null=True, related_name='sessions'
     )
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
-        return f"Respondent {self.id}"
+        return f"Session {self.id}"
 
 
 class Topic(models.Model):
     interview = models.ForeignKey(Interview, on_delete=models.CASCADE, related_name='topics')
-    name = models.TextField()
+    name = models.CharField(max_length=500)
     goal = models.TextField(
         blank=True,
         default='',
@@ -51,9 +51,12 @@ class Topic(models.Model):
 
 class Answer(models.Model):
     topic = models.ForeignKey(Topic, on_delete=models.CASCADE)
-    respondent = models.ForeignKey(Respondent, on_delete=models.CASCADE)
+    session = models.ForeignKey(InterviewSession, on_delete=models.CASCADE)
     text = models.TextField()
     created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = [('topic', 'session')]
 
     def __str__(self):
         return f"Answer to: {self.topic}"

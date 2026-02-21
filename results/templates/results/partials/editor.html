@@ -1,0 +1,110 @@
+<div class="border-b border-gray-200">
+    <!-- Header row -->
+    <div class="flex items-start justify-between gap-4 px-6 pt-5 pb-4">
+        <div>
+            <button
+                x-show="results[selectedIndex]?.themes?.length > 0"
+                @click="backToResults(selectedIndex)"
+                class="flex items-center gap-1 text-xs text-gray-400 hover:text-gray-600 transition-colors mb-2"
+            >
+                <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg>
+                Back to results
+            </button>
+            <p class="text-xs text-gray-400 mb-0.5" x-text="'Topic ' + (selectedIndex + 1)"></p>
+            <h2 class="text-base font-medium text-gray-900" x-text="results[selectedIndex]?.topic_text"></h2>
+        </div>
+        <div class="flex items-center gap-2 flex-shrink-0">
+            <button
+                @click="toggleRediscover()"
+                :disabled="!!discoveringIds[results[selectedIndex]?.topic_id]"
+                :class="rediscoverOpen ? 'border-gray-400 text-gray-700 bg-gray-50' : 'border-gray-200 text-gray-500'"
+                class="text-sm px-3 py-1.5 border rounded hover:bg-gray-50 transition-colors disabled:opacity-40"
+            >
+                <span x-show="!discoveringIds[results[selectedIndex]?.topic_id]">↺ Re-discover</span>
+                <span x-show="!!discoveringIds[results[selectedIndex]?.topic_id]">Discovering...</span>
+            </button>
+            <button
+                @click="runClassification(selectedIndex)"
+                :disabled="!!classifyingIds[results[selectedIndex]?.topic_id] || proposedThemes.length === 0"
+                class="text-sm px-3 py-1.5 bg-gray-900 text-white rounded hover:bg-gray-800 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+                <span x-show="!classifyingIds[results[selectedIndex]?.topic_id]">Run Analysis</span>
+                <span x-show="!!classifyingIds[results[selectedIndex]?.topic_id]">Classifying...</span>
+            </button>
+        </div>
+    </div>
+
+    <!-- Re-discover prompt panel -->
+    <div x-show="rediscoverOpen" x-transition class="mx-6 mb-4 p-3 border border-gray-200 rounded-lg bg-gray-50">
+        <p class="text-xs text-gray-500 mb-2">Optional: give the AI special instructions for this discovery run.</p>
+        <textarea
+            x-model="rediscoverPrompt"
+            placeholder='e.g. "Make sure to include a theme on burnout" or "Focus on themes related to management"'
+            rows="2"
+            @keydown.enter.meta="rediscoverThemes(selectedIndex)"
+            class="w-full text-sm px-3 py-2 border border-gray-200 rounded bg-white focus:outline-none focus:ring-1 focus:ring-gray-400 resize-none placeholder-gray-300"
+        ></textarea>
+        <div class="flex justify-end gap-2 mt-2">
+            <button @click="toggleRediscover()" class="text-sm px-3 py-1.5 text-gray-500 hover:text-gray-700 transition-colors">Cancel</button>
+            <button
+                @click="rediscoverThemes(selectedIndex)"
+                class="text-sm px-3 py-1.5 bg-gray-900 text-white rounded hover:bg-gray-800 transition-colors"
+            >Discover</button>
+        </div>
+    </div>
+
+    <!-- Loading state (re-discover or classify in progress) -->
+    <template x-if="discoveringIds[results[selectedIndex]?.topic_id] || classifyingIds[results[selectedIndex]?.topic_id]">
+        <div class="flex flex-col items-center justify-center py-12 px-6 gap-3">
+            <svg class="animate-spin w-6 h-6 text-gray-400" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"></path>
+            </svg>
+            <p class="text-sm text-gray-400" x-text="discoveringIds[results[selectedIndex]?.topic_id] ? 'Discovering themes…' : 'Classifying answers…'"></p>
+        </div>
+    </template>
+
+    <!-- Themes title + instructions + rows -->
+    <template x-if="!discoveringIds[results[selectedIndex]?.topic_id] && !classifyingIds[results[selectedIndex]?.topic_id]">
+        <div>
+            <div class="px-6 pb-3">
+                <h3 class="text-base font-medium text-gray-900 mb-1">Theme editor</h3>
+                <p class="text-sm text-gray-400">Review the AI-suggested themes below. Edit names and descriptions, delete any that don't fit, or add your own. When you're happy, click <strong class="text-gray-600 font-medium">Run Analysis</strong> to classify all answers.</p>
+            </div>
+
+            <div class="px-6">
+                <template x-for="(theme, i) in proposedThemes" :key="i">
+                    <div class="group flex items-start gap-3 py-3 border border-gray-200 rounded-lg px-3 mb-2 bg-gray-50 hover:border-gray-300 hover:bg-gray-100 transition-colors">
+                        <div class="w-2.5 h-2.5 rounded-full flex-shrink-0 mt-1.5" :style="'background-color: ' + getThemeColor(i)"></div>
+                        <div class="flex-1 min-w-0">
+                            <div
+                                class="text-base font-medium text-gray-900 focus:outline-none focus:ring-1 focus:ring-gray-300 rounded px-1 -mx-1"
+                                contenteditable="true"
+                                x-text="theme.name"
+                                @blur="updateThemeName(i, $event.target.innerText)"
+                                @keydown.enter.prevent="$event.target.blur()"
+                            ></div>
+                            <div
+                                class="text-sm text-gray-500 focus:outline-none focus:text-gray-700 focus:ring-1 focus:ring-gray-300 rounded px-1 -mx-1 mt-0.5"
+                                contenteditable="true"
+                                x-text="theme.description"
+                                @blur="updateThemeDesc(i, $event.target.innerText)"
+                            ></div>
+                        </div>
+                        <button
+                            @click="deleteTheme(i)"
+                            class="flex-shrink-0 text-gray-400 hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100 text-xl leading-none mt-0.5"
+                        >×</button>
+                    </div>
+                </template>
+
+                <button
+                    @click="addTheme()"
+                    class="flex items-center gap-2 w-full py-2.5 px-3 text-base text-gray-500 border border-dashed border-gray-300 rounded-lg hover:border-gray-400 hover:text-gray-700 hover:bg-gray-50 transition-colors mb-6"
+                >
+                    <span class="text-lg leading-none">+</span> Add theme
+                </button>
+            </div>
+        </div>
+    </template>
+</div>

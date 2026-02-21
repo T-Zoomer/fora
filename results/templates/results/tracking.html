@@ -5,18 +5,13 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Tracking – {{ interview.name }}</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
     <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap');
     </style>
     <script>
         tailwind.config = {
-            theme: {
-                extend: {
-                    fontFamily: { sans: ['Inter', 'system-ui', 'sans-serif'] }
-                }
-            }
+            theme: { extend: { fontFamily: { sans: ['Inter', 'system-ui', 'sans-serif'] } } }
         }
     </script>
 </head>
@@ -28,86 +23,50 @@
         const CSRF_TOKEN = '{{ csrf_token }}';
     </script>
 
-    <div
-        x-data="trackingApp()"
-        x-init="loadData()"
-        class="flex flex-col items-center px-6 py-16"
-    >
-        <div class="w-full max-w-2xl space-y-10">
+    <div x-data="trackingApp()" x-init="loadData()" class="flex flex-col items-center px-6 py-24">
 
-            <!-- Headline stat -->
-            <div class="text-center">
-                <p class="text-6xl font-bold text-gray-900" x-text="total !== null ? total : '—'"></p>
-                <p class="mt-2 text-lg text-gray-500">responses so far</p>
+        <!-- Normal state -->
+        <div x-show="!closing" class="w-full max-w-xs text-center space-y-10">
+            <div>
+                <p class="text-6xl font-bold text-gray-900" x-text="completed !== null ? completed : '—'"></p>
+                <p class="mt-2 text-gray-400">completed</p>
             </div>
-
-            <!-- Bar chart -->
-            <div class="bg-gray-50 rounded-xl p-6">
-                <canvas id="responsesChart" height="160"></canvas>
-                <p x-show="byDay.length === 0 && loaded" class="text-center text-sm text-gray-400 mt-4">No responses yet.</p>
-            </div>
-
-            <!-- Close button -->
-            <div class="text-center">
-                <button
-                    @click="closeInterview()"
-                    :disabled="closing"
-                    class="px-8 py-3 bg-gray-900 text-white text-sm font-medium rounded-lg hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                >
-                    <span x-show="!closing">Close and analyse interviews</span>
-                    <span x-show="closing">Closing…</span>
-                </button>
-            </div>
-
+            <button
+                @click="closeInterview()"
+                class="w-full px-8 py-3 bg-gray-900 text-white text-sm font-medium rounded-lg hover:bg-gray-700 transition-colors"
+            >
+                Close and analyse
+            </button>
         </div>
+
+        <!-- Loading state -->
+        <div x-show="closing" class="w-full max-w-xs text-center space-y-6">
+            <svg class="animate-spin w-10 h-10 text-gray-400 mx-auto" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"></path>
+            </svg>
+            <div>
+                <p class="text-base font-medium text-gray-900">Analysing responses…</p>
+                <p class="mt-1 text-sm text-gray-400">The AI is hard at work analysing all the answers. This can take a couple of minutes — please keep this tab open.</p>
+            </div>
+        </div>
+
     </div>
 
     <script>
         function trackingApp() {
             return {
-                total: null,
-                byDay: [],
-                loaded: false,
+                completed: null,
                 closing: false,
-                chart: null,
 
                 async loadData() {
                     try {
-                        const res = await fetch(`/results/${INTERVIEW_ID}/api/respondents/`);
+                        const res = await fetch(`/results/${INTERVIEW_ID}/api/interview-sessions/`);
                         const data = await res.json();
-                        this.total = data.total;
-                        this.byDay = data.by_day;
-                        this.loaded = true;
-                        this.$nextTick(() => this.renderChart());
+                        this.completed = data.completed;
                     } catch (e) {
-                        console.error('Failed to load respondent data', e);
-                        this.loaded = true;
+                        console.error('Failed to load tracking data', e);
                     }
-                },
-
-                renderChart() {
-                    if (this.byDay.length === 0) return;
-                    const ctx = document.getElementById('responsesChart').getContext('2d');
-                    if (this.chart) this.chart.destroy();
-                    this.chart = new Chart(ctx, {
-                        type: 'bar',
-                        data: {
-                            labels: this.byDay.map(d => d.date),
-                            datasets: [{
-                                data: this.byDay.map(d => d.count),
-                                backgroundColor: '#9ca3af',
-                                borderRadius: 4,
-                                borderSkipped: false,
-                            }],
-                        },
-                        options: {
-                            plugins: { legend: { display: false } },
-                            scales: {
-                                x: { grid: { display: false }, ticks: { color: '#6b7280', font: { size: 11 } } },
-                                y: { grid: { color: '#f3f4f6' }, ticks: { color: '#6b7280', font: { size: 11 }, stepSize: 1 }, beginAtZero: true },
-                            },
-                        },
-                    });
                 },
 
                 async closeInterview() {

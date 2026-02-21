@@ -1,0 +1,17 @@
+<div class="mb-8 flex items-start justify-between gap-4">
+    <div>
+        <p class="text-xs text-gray-400 mb-2" x-text="'Topic ' + (selectedIndex + 1)"></p>
+        <h2 class="text-xl font-medium text-gray-900" x-text="results[selectedIndex]?.topic_text"></h2>
+    </div>
+
+    <!-- Results view: change themes button (opens editor, no API call) -->
+    <button
+        x-show="isResults()"
+        @click="openEditor(selectedIndex)"
+        :disabled="!!classifyingIds[results[selectedIndex]?.topic_id]"
+        class="flex-shrink-0 mt-1 text-sm px-3 py-1.5 rounded border border-gray-200 text-gray-600 hover:bg-gray-100 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+    >
+        <span x-show="!classifyingIds[results[selectedIndex]?.topic_id]">Change themes</span>
+        <span x-show="!!classifyingIds[results[selectedIndex]?.topic_id]">Classifying...</span>
+    </button>
+</div>

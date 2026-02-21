@@ -5,10 +5,10 @@ from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_http_methods
 
-from django.db import models
-from django.db.models.functions import TruncDate
 
-from interview.models import Topic, Answer, Interview, Respondent
+from django.utils import timezone
+
+from interview.models import Topic, Answer, Interview, InterviewSession
 from .models import Result
 from .services import run_sentiment_analysis, generate_summary, chat_with_all_answers, discover_themes_only, run_classification_with_themes
 
@@ -45,29 +45,57 @@ def dashboard_view(request, interview_id):
     })
 
 
+def _run_topic_pipeline(topic, result, answer_count):
+    """Run the full analysis pipeline for a topic. Mutates and saves result."""
+    proposed = discover_themes_only(topic)
+    result.proposed_themes = proposed
+    result.save()
+
+    themes = run_classification_with_themes(topic, proposed)
+    sentiment = {}
+    if topic.analyze_sentiment:
+        sentiment = run_sentiment_analysis(topic)
+    summary = generate_summary(topic)
+
+    result.themes = themes
+    result.sentiment = sentiment
+    result.summary = summary
+    result.answer_count = answer_count
+    result.analyzed_at = timezone.now()
+    result.status = 'completed'
+    result.save()
+
+
 @require_http_methods(["POST"])
 def close_interview_api(request, interview_id):
-    """Close an interview so it transitions to the analysis dashboard."""
+    """Close interview and run analysis on all topics."""
     interview = get_object_or_404(Interview, uuid=interview_id)
     interview.is_open = False
     interview.save(update_fields=['is_open'])
+
+    for topic in Topic.objects.filter(interview=interview):
+        answer_count = Answer.objects.filter(topic=topic).count()
+        if answer_count == 0:
+            continue
+        result, _ = Result.objects.get_or_create(topic=topic)
+        result.status = 'running'
+        result.save()
+        try:
+            _run_topic_pipeline(topic, result, answer_count)
+        except Exception as e:
+            print(f"[error] close-analyse topic {topic.id}: {e}")
+            traceback.print_exc()
+            result.status = 'failed'
+            result.save()
+
     return JsonResponse({'success': True})
 
 
 @require_http_methods(["GET"])
-def respondents_api(request, interview_id):
-    """Return respondent count grouped by day."""
+def sessions_api(request, interview_id):
     interview = get_object_or_404(Interview, uuid=interview_id)
-    qs = (
-        Respondent.objects.filter(interview=interview)
-        .annotate(date=TruncDate('created_at'))
-        .values('date')
-        .annotate(count=models.Count('id'))
-        .order_by('date')
-    )
-    total = Respondent.objects.filter(interview=interview).count()
-    by_day = [{'date': str(row['date']), 'count': row['count']} for row in qs]
-    return JsonResponse({'total': total, 'by_day': by_day})
+    completed = InterviewSession.objects.filter(interview=interview).count()
+    return JsonResponse({'completed': completed})
 
 
 @require_http_methods(["POST"])
@@ -101,6 +129,7 @@ def run_single_api(request, topic_id):
         result.sentiment = sentiment
         result.summary = summary
         result.answer_count = answer_count
+        result.analyzed_at = timezone.now()
         result.status = 'completed'
         result.save()
 
@@ -121,6 +150,7 @@ def run_single_api(request, topic_id):
             'status': 'failed',
             'error': str(e),
         }, status=500)
+
 
 
 @require_http_methods(["GET"])
@@ -217,6 +247,7 @@ def classify_with_themes_api(request, topic_id):
         result.sentiment = sentiment
         result.summary = summary
         result.answer_count = answer_count
+        result.analyzed_at = timezone.now()
         result.status = 'completed'
         result.save()
 
